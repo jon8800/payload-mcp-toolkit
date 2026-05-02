@@ -44,6 +44,7 @@ export default buildConfig({
         pages: '',
         posts: '/blog',
       },
+      sectionBlockSlugs: ['fullWidth', 'twoColumn', 'ctaBanner', 'headingOnly'],
       draftBehavior: {
         pages: 'always-draft',
         posts: 'always-draft',

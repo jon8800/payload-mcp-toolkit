@@ -27,6 +27,21 @@ export interface ContentToolkitOptions {
    */
   previewPaths?: Record<string, string>
 
+  /**
+   * Explicit list of block slugs that should be treated as **section** blocks
+   * (top-level layout containers). Any block not in this list is treated as
+   * a **leaf** block (composable inside a section's `blocks` field).
+   *
+   * When omitted, the toolkit falls back to a heuristic: blocks that contain
+   * a nested `blocks`-type field are sections, all others are leaves. This
+   * heuristic mis-classifies "fixed" sections (sections with no nested blocks
+   * but their own standalone fields, e.g. a CTA banner). Pass this option
+   * to disambiguate.
+   *
+   * Example: `['hero', 'fullWidth', 'twoColumn', 'ctaBanner']`
+   */
+  sectionBlockSlugs?: string[]
+
   /** Site-specific domain prompts that teach the AI business vocabulary */
   domainPrompts?: DomainPrompt[]
 

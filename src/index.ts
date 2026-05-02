@@ -37,21 +37,37 @@ export function contentToolkitPlugin(options: ContentToolkitOptions): Plugin {
     const allBlocks = (incomingConfig.blocks ?? []) as Block[]
 
     // Separate section blocks from leaf blocks.
-    // Section blocks contain nested blocks-type fields; leaf blocks do not.
+    //
+    // Preferred: `options.sectionBlockSlugs` — explicit, unambiguous.
+    // Fallback heuristic: blocks containing a nested `blocks`-type field are
+    // sections, all others are leaves. The heuristic mis-classifies "fixed"
+    // sections (no nested blocks but their own standalone fields), so prefer
+    // the explicit option whenever the schema has any fixed sections.
     const sectionBlocks: Block[] = []
     const leafBlocks: Block[] = []
 
-    for (const block of allBlocks) {
-      const hasBlocksField = block.fields.some(
-        (f) => f.type === 'blocks' ||
-        (f.type === 'tabs' && 'tabs' in f && f.tabs.some(
-          (tab: any) => 'fields' in tab && tab.fields.some((tf: any) => tf.type === 'blocks')
-        ))
-      )
-      if (hasBlocksField) {
-        sectionBlocks.push(block)
-      } else {
-        leafBlocks.push(block)
+    if (options.sectionBlockSlugs && options.sectionBlockSlugs.length > 0) {
+      const sectionSlugs = new Set(options.sectionBlockSlugs)
+      for (const block of allBlocks) {
+        if (sectionSlugs.has(block.slug)) {
+          sectionBlocks.push(block)
+        } else {
+          leafBlocks.push(block)
+        }
+      }
+    } else {
+      for (const block of allBlocks) {
+        const hasBlocksField = block.fields.some(
+          (f) => f.type === 'blocks' ||
+          (f.type === 'tabs' && 'tabs' in f && f.tabs.some(
+            (tab: any) => 'fields' in tab && tab.fields.some((tf: any) => tf.type === 'blocks')
+          ))
+        )
+        if (hasBlocksField) {
+          sectionBlocks.push(block)
+        } else {
+          leafBlocks.push(block)
+        }
       }
     }
 
