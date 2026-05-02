@@ -6,10 +6,15 @@ import { generatePrompts } from './prompts'
 import { generateResources } from './resources'
 import { generateMcpCollectionConfigs } from './draft-workflow'
 import { createComposeLayoutTool } from './tools/compose-layout'
+import { createPatchLayoutTool } from './tools/patch-layout'
 import { createPublishDraftTool } from './tools/publish-draft'
 import { createResolveReferenceTool } from './tools/resolve-reference'
+import { createSafeDeleteTool } from './tools/safe-delete'
+import { createSchedulePublishTool } from './tools/schedule-publish'
+import { createSearchContentTool } from './tools/search-content'
 import { createUpdateDocumentTool } from './tools/update-document'
 import { createUploadMediaTool } from './tools/upload-media'
+import { createListVersionsTool, createRestoreVersionTool } from './tools/versions'
 
 /**
  * Payload MCP Toolkit
@@ -104,16 +109,25 @@ export function contentToolkitPlugin(options: ContentToolkitOptions): Plugin {
       excludeCollections: options.excludeCollections,
     })
 
-    const tools = [
+    const tools: any[] = [
       createComposeLayoutTool(blockCatalog),
+      createPatchLayoutTool(blockCatalog, draftCollections),
       createPublishDraftTool(draftCollections),
       createResolveReferenceTool(searchableCollections),
+      createSafeDeleteTool(relationships),
+      createSearchContentTool(collectionSchemas),
       createUpdateDocumentTool(collectionSchemas, draftCollections),
       createUploadMediaTool({
         maxFileSize: options.mediaUpload?.maxFileSize,
         collectionSlug: options.mediaUpload?.collectionSlug,
       }),
+      createListVersionsTool(draftCollections),
+      createRestoreVersionTool(draftCollections),
     ]
+
+    // schedulePublish only registers when at least one draft collection has a `publishedAt` date field
+    const schedulePublish = createSchedulePublishTool(collectionSchemas, draftCollections)
+    if (schedulePublish) tools.push(schedulePublish)
 
     // Build MCP global configs
     const mcpGlobals: Record<string, { enabled: boolean; description?: string }> = {}

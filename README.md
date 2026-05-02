@@ -23,15 +23,27 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 **Auto-generated resources** (machine-readable JSON for the LLM):
 - `blocks://catalog`, `collections://schema`, `collections://relationships`.
 
-**Custom tools**:
+**Custom tools** (11 total):
+
+*Authoring*
 - `composePageLayout` — build a validated page layout from sections + leaves.
-- `publishDraft` — flip `_status` from draft to published.
-- `resolveReference` — search collections by name/title/slug for relationship IDs.
+- `patchLayout` — surgically append/prepend/insertAt/replaceAt sections on a doc's block-array field without round-tripping the whole array. Safer than `updateDocument` for incremental layout edits.
 - `updateDocument` — Local-API based update that survives the upload-field bug in the official plugin.
 - `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe), create a Media doc.
 
+*Discovery*
+- `resolveReference` — search collections by name/title/slug for relationship IDs.
+- `searchContent` — natural-language editor triage. Filter by `status`, `olderThanDays` / `newerThanDays`, `missingFields`, free-text `query`, scoped to one collection or all.
+
+*Lifecycle / safety*
+- `publishDraft` — flip `_status` from draft to published.
+- `schedulePublish` — stamp a future `publishedAt` on a draft (auto-registered only for collections that have both drafts AND a `publishedAt` date field; **requires a Payload jobs queue or external worker to actually flip status at the appointed time** — see [Payload Jobs Queue](https://payloadcms.com/docs/jobs-queue/scheduled-jobs)).
+- `listVersions` — recent saved versions of a draft document with id/status/timestamp/displayName.
+- `restoreVersion` — roll a document back to a saved version (creates a new version on top, so itself reversible).
+- `safeDelete` — relationship-aware delete. Walks the introspected relationship graph, refuses with a structured impact summary if other documents reference the target. Override with `confirm: true` after reviewing.
+
 **Draft workflow** wired into the official plugin's `mcpCollections`:
-- Disables raw `update` for `always-draft` collections so clients go through `publishDraft`.
+- Disables raw `update` for `always-draft` collections so clients go through `publishDraft` (or `patchLayout` / `updateDocument`, both of which preserve draft semantics).
 - Appends preview URLs to draft responses (path prefixes are configurable via `previewPaths`).
 
 ## Install
