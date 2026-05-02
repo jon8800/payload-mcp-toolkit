@@ -33,9 +33,9 @@
     "clean": "rimraf dist *.tsbuildinfo",
     "copyfiles": "copyfiles -u 1 \"src/**/*.{html,css,scss,svg,json}\" dist/",
     "dev": "next dev dev --turbo",
-    "dev:generate-importmap": "pnpm dev:payload generate:importmap",
-    "dev:generate-types": "pnpm dev:payload generate:types",
-    "dev:payload": "cross-env PAYLOAD_CONFIG_PATH=./dev/payload.config.ts payload",
+    "dev:generate-importmap": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload generate:importmap",
+    "dev:generate-types": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload generate:types",
+    "dev:payload": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload",
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest"

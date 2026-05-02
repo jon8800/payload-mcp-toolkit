@@ -7,20 +7,39 @@
  * Creates an admin user, a couple of categories/authors, and one sample
  * page + post so the introspection-driven tools have data to work with.
  */
+import { writeFileSync } from 'node:fs'
 import { getPayload } from 'payload'
-import config from './payload.config'
+import config from './payload.config.js'
+
+function logProgress(msg: string) {
+  // payload run swallows console output; mirror to a file so we can verify
+  writeFileSync('seed-progress.log', msg + '\n', { flag: 'a' })
+}
 
 async function seed() {
+  logProgress('seed: starting')
   const payload = await getPayload({ config })
+  logProgress('seed: payload booted')
 
-  await payload.create({
+  const existingUser = await payload.find({
     collection: 'users',
-    data: {
-      email: 'admin@example.com',
-      password: 'password',
-      name: 'Admin',
-    },
+    where: { email: { equals: 'admin@example.com' } },
+    limit: 1,
   })
+
+  if (existingUser.totalDocs === 0) {
+    await payload.create({
+      collection: 'users',
+      data: {
+        email: 'admin@example.com',
+        password: 'password',
+        name: 'Admin',
+      },
+    })
+    logProgress('seed: admin user created')
+  } else {
+    logProgress('seed: admin user already exists, skipping')
+  }
 
   const tech = await payload.create({
     collection: 'categories',
@@ -54,13 +73,11 @@ async function seed() {
     },
   })
 
-  // eslint-disable-next-line no-console
-  console.log('Seed complete.')
+  logProgress('seed: complete')
   process.exit(0)
 }
 
 seed().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(err)
+  writeFileSync('seed-error.log', String(err?.stack || err))
   process.exit(1)
 })

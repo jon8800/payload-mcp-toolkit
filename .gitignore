@@ -44,3 +44,6 @@ pnpm-debug.log*
 
 # Generated
 next-env.d.ts
+dev.db
+dev.db-journal
+pnpm-lock.yaml

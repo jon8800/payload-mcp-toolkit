@@ -19,6 +19,9 @@ const dirname = path.dirname(fileURLToPath(import.meta.url))
 export default buildConfig({
   admin: {
     user: Users.slug,
+    importMap: {
+      baseDir: path.resolve(dirname),
+    },
   },
   collections: [Users, Media, Categories, Authors, Posts, Pages],
   globals: [SiteSettings],
