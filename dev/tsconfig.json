@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.json",
+  "exclude": [],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "../src/**/*.ts",
+    "next.config.mjs",
+    ".next/types/**/*.ts"
+  ],
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "@payload-config": ["./payload.config.ts"],
+      "payload-mcp-toolkit": ["../src/index.ts"]
+    },
+    "noEmit": true,
+    "emitDeclarationOnly": false
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "name": "payload-mcp-toolkit",
+  "version": "0.1.0",
+  "description": "Schema-aware MCP toolkit for Payload CMS — wraps the official @payloadcms/plugin-mcp with introspected prompts, resources, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "payload",
+    "payload-plugin",
+    "payloadcms",
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "cms",
+    "content-management"
+  ],
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm copyfiles && pnpm build:types && pnpm build:swc",
+    "build:swc": "swc ./src -d ./dist --config-file .swcrc --strip-leading-paths",
+    "build:types": "tsc --outDir dist --rootDir ./src",
+    "clean": "rimraf dist *.tsbuildinfo",
+    "copyfiles": "copyfiles -u 1 \"src/**/*.{html,css,scss,svg,json}\" dist/",
+    "dev": "next dev dev --turbo",
+    "dev:generate-importmap": "pnpm dev:payload generate:importmap",
+    "dev:generate-types": "pnpm dev:payload generate:types",
+    "dev:payload": "cross-env PAYLOAD_CONFIG_PATH=./dev/payload.config.ts payload",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@payloadcms/plugin-mcp": "^3.0.0",
+    "payload": "^3.0.0",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@payloadcms/db-sqlite": "3.82.1",
+    "@payloadcms/next": "3.82.1",
+    "@payloadcms/plugin-mcp": "3.82.1",
+    "@payloadcms/richtext-lexical": "3.82.1",
+    "@payloadcms/ui": "3.82.1",
+    "@swc/cli": "0.6.0",
+    "@types/node": "22.19.9",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "copyfiles": "2.4.1",
+    "cross-env": "^7.0.3",
+    "graphql": "^16.8.1",
+    "next": "16.2.3",
+    "payload": "3.82.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "rimraf": "^5.0.5",
+    "sharp": "0.34.2",
+    "typescript": "5.7.3",
+    "vite-tsconfig-paths": "6.0.5",
+    "vitest": "4.0.18",
+    "zod": "^3.23.8"
+  },
+  "engines": {
+    "node": "^18.20.2 || >=20.9.0",
+    "pnpm": "^9 || ^10"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "esbuild",
+      "better-sqlite3"
+    ]
+  }
+}
