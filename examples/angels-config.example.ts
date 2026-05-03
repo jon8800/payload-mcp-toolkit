@@ -53,27 +53,27 @@ const angelsPrompts: DomainPrompt[] = [
   },
 ]
 
-export function createAngelsConfig(
-  siteUrl: string,
-  previewSecret: string,
-): ContentToolkitOptions {
+/**
+ * Site-specific options for the Angels Escorts CMS.
+ *
+ * Notes for adapting this to your own site:
+ * - `serverURL` on your `buildConfig()` is what the toolkit reads as the
+ *   absolute base for preview URLs — set it there, not here.
+ * - Preview URL paths come from each collection's own `admin.livePreview.url`
+ *   (e.g. `models` → `/models/${slug}`). Configure them on the collection
+ *   itself; this file only carries vocabulary and overrides.
+ * - Draft behavior is inferred from `versions.drafts`. The override map
+ *   below is only needed if you specifically want raw publish on a draftable
+ *   collection — usually you can drop this property entirely.
+ */
+export function createAngelsConfig(): ContentToolkitOptions {
   return {
-    siteUrl,
-    previewSecret,
-    previewPaths: {
-      models: '/models',
-      'blog-posts': '/blog',
-      pages: '',
-    },
     domainPrompts: angelsPrompts,
-    draftBehavior: {
-      models: 'always-draft',
-      pages: 'always-draft',
-      'blog-posts': 'always-draft',
-    },
     mediaUpload: {
       maxFileSize: 10 * 1024 * 1024, // 10MB
     },
-    excludeCollections: ['form-uploads'],
+    exclude: {
+      collections: ['form-uploads'],
+    },
   }
 }

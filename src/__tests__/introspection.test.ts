@@ -4,6 +4,7 @@ import {
   introspectCollection,
   introspectCollections,
   introspectBlocks,
+  buildBlockNestingMap,
   buildRelationshipGraph,
 } from '../introspection'
 
@@ -32,7 +33,7 @@ const Authors: CollectionConfig = {
   ],
 }
 
-// Leaf blocks
+// Leaf-style blocks
 const Heading: Block = {
   slug: 'heading',
   fields: [
@@ -65,16 +66,14 @@ const ImageBlock: Block = {
   ],
 }
 
-const allLeafBlocks: Block[] = [Heading, RichText, ImageBlock]
-
-// Section blocks
+// Container-style blocks (have nested blocks fields)
 const FullWidth: Block = {
   slug: 'fullWidth',
   fields: [
     {
       name: 'content',
       type: 'blocks',
-      blocks: allLeafBlocks,
+      blocks: [Heading, RichText, ImageBlock],
     },
   ],
 }
@@ -100,7 +99,26 @@ const CtaBanner: Block = {
   ],
 }
 
-const allSectionBlocks: Block[] = [FullWidth, HeadingOnly, CtaBanner]
+// Deeply-nestable container — exercises the recursive path
+const Accordion: Block = {
+  slug: 'accordion',
+  fields: [
+    {
+      name: 'panels',
+      type: 'array',
+      fields: [
+        { name: 'title', type: 'text' },
+        {
+          name: 'body',
+          type: 'blocks',
+          blocks: [Heading, RichText, FullWidth],
+        },
+      ],
+    },
+  ],
+}
+
+const allBlocks: Block[] = [Heading, RichText, ImageBlock, FullWidth, HeadingOnly, CtaBanner, Accordion]
 
 const Posts: CollectionConfig = {
   slug: 'posts',
@@ -149,7 +167,7 @@ const Pages: CollectionConfig = {
           label: 'Content',
           fields: [
             { name: 'slug', type: 'text', required: true },
-            { name: 'layout', type: 'blocks', blocks: allSectionBlocks },
+            { name: 'layout', type: 'blocks', blocks: [FullWidth, HeadingOnly, CtaBanner, Accordion] },
           ],
         },
       ],
@@ -157,7 +175,7 @@ const Pages: CollectionConfig = {
   ],
 }
 
-// ─── Tests ─────────────────────────────────────────────────────────
+// ─── introspectCollection ──────────────────────────────────────────
 
 describe('introspectCollection', () => {
   it('extracts Posts collection fields, relationships, and draft status', () => {
@@ -211,45 +229,26 @@ describe('introspectCollection', () => {
   })
 })
 
+// ─── introspectBlocks (flat catalog) ───────────────────────────────
+
 describe('introspectBlocks', () => {
-  it('discovers fullWidth accepts all leaf blocks (composable)', () => {
-    const catalog = introspectBlocks(allSectionBlocks, allLeafBlocks)
-
-    const fullWidth = catalog.sections.find((s) => s.slug === 'fullWidth')
-    expect(fullWidth).toBeDefined()
-    expect(fullWidth!.nestingType).toBe('composable')
-    expect(fullWidth!.acceptedLeafSlugs.length).toBe(allLeafBlocks.length)
+  it('returns a flat catalog of every block with no section/leaf split', () => {
+    const catalog = introspectBlocks(allBlocks)
+    const slugs = catalog.blocks.map((b) => b.slug)
+    expect(slugs).toEqual([
+      'heading',
+      'richText',
+      'image',
+      'fullWidth',
+      'headingOnly',
+      'ctaBanner',
+      'accordion',
+    ])
   })
 
-  it('marks ctaBanner as fixed (no nested blocks)', () => {
-    const catalog = introspectBlocks(allSectionBlocks, allLeafBlocks)
-
-    const ctaBanner = catalog.sections.find((s) => s.slug === 'ctaBanner')
-    expect(ctaBanner).toBeDefined()
-    expect(ctaBanner!.nestingType).toBe('fixed')
-    expect(ctaBanner!.acceptedLeafSlugs).toHaveLength(0)
-  })
-
-  it('marks headingOnly as constrained (single leaf type, maxRows: 1)', () => {
-    const catalog = introspectBlocks(allSectionBlocks, allLeafBlocks)
-
-    const headingOnly = catalog.sections.find((s) => s.slug === 'headingOnly')
-    expect(headingOnly).toBeDefined()
-    expect(headingOnly!.nestingType).toBe('constrained')
-    expect(headingOnly!.acceptedLeafSlugs).toEqual(['heading'])
-    expect(headingOnly!.maxRows).toBe(1)
-  })
-
-  it('extracts all leaf blocks', () => {
-    const catalog = introspectBlocks(allSectionBlocks, allLeafBlocks)
-    expect(catalog.leaves).toHaveLength(3)
-    const leafSlugs = catalog.leaves.map((l) => l.slug)
-    expect(leafSlugs).toEqual(['heading', 'richText', 'image'])
-  })
-
-  it('extracts leaf block fields including select options', () => {
-    const catalog = introspectBlocks(allSectionBlocks, allLeafBlocks)
-    const heading = catalog.leaves.find((l) => l.slug === 'heading')
+  it('extracts each block\'s fields including select options', () => {
+    const catalog = introspectBlocks(allBlocks)
+    const heading = catalog.blocks.find((b) => b.slug === 'heading')
     expect(heading).toBeDefined()
     const headingFieldNames = heading!.fields.map((f) => f.name)
     expect(headingFieldNames).toEqual(['text', 'level', 'align'])
@@ -257,6 +256,70 @@ describe('introspectBlocks', () => {
     expect(level!.options).toBeDefined()
   })
 })
+
+// ─── buildBlockNestingMap ──────────────────────────────────────────
+
+describe('buildBlockNestingMap', () => {
+  it('records the layout field on Pages with the slugs it accepts', () => {
+    const map = buildBlockNestingMap([Pages, Posts], allBlocks)
+    const pageLayout = map.find(
+      (e) => e.ownerType === 'collection' && e.owner === 'pages' && e.fieldPath === 'layout',
+    )
+    expect(pageLayout).toBeDefined()
+    expect(pageLayout!.acceptedBlockSlugs).toEqual(['fullWidth', 'headingOnly', 'ctaBanner', 'accordion'])
+  })
+
+  it('records nested blocks fields inside container blocks', () => {
+    const map = buildBlockNestingMap([Pages], allBlocks)
+
+    const fullWidthContent = map.find(
+      (e) => e.ownerType === 'block' && e.owner === 'fullWidth' && e.fieldPath === 'content',
+    )
+    expect(fullWidthContent).toBeDefined()
+    expect(fullWidthContent!.acceptedBlockSlugs).toEqual(['heading', 'richText', 'image'])
+
+    const headingOnly = map.find(
+      (e) => e.ownerType === 'block' && e.owner === 'headingOnly' && e.fieldPath === 'content',
+    )
+    expect(headingOnly!.acceptedBlockSlugs).toEqual(['heading'])
+    expect(headingOnly!.maxRows).toBe(1)
+  })
+
+  it('handles arbitrarily-deep nesting via array fields inside blocks', () => {
+    const map = buildBlockNestingMap([Pages], allBlocks)
+
+    const accordionPanelBody = map.find(
+      (e) =>
+        e.ownerType === 'block' && e.owner === 'accordion' && e.fieldPath === 'panels[].body',
+    )
+    expect(accordionPanelBody).toBeDefined()
+    expect(accordionPanelBody!.acceptedBlockSlugs).toEqual(['heading', 'richText', 'fullWidth'])
+  })
+
+  it('omits unknown slugs not present in the block list', () => {
+    const Stray: CollectionConfig = {
+      slug: 'stray',
+      fields: [
+        {
+          name: 'layout',
+          type: 'blocks',
+          blocks: [Heading, { slug: 'mystery', fields: [] } as Block],
+        },
+      ],
+    }
+    const map = buildBlockNestingMap([Stray], [Heading]) // mystery not in catalog
+    const stray = map.find((e) => e.owner === 'stray' && e.fieldPath === 'layout')
+    expect(stray!.acceptedBlockSlugs).toEqual(['heading'])
+  })
+
+  it('omits fixed blocks (no nested blocks fields) from the map', () => {
+    const map = buildBlockNestingMap([Pages], allBlocks)
+    const ctaEntries = map.filter((e) => e.owner === 'ctaBanner')
+    expect(ctaEntries).toHaveLength(0)
+  })
+})
+
+// ─── buildRelationshipGraph ────────────────────────────────────────
 
 describe('buildRelationshipGraph', () => {
   it('builds correct graph from sample collections', () => {

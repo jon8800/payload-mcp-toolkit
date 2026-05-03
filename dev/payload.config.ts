@@ -28,6 +28,7 @@ export default buildConfig({
   blocks: [...allSectionBlocks, ...allLeafBlocks],
   editor: lexicalEditor(),
   secret: process.env.PAYLOAD_SECRET || 'dev-secret-not-for-production',
+  serverURL: process.env.SITE_URL || 'http://localhost:3000',
   typescript: {
     outputFile: path.resolve(dirname, 'payload-types.ts'),
   },
@@ -37,18 +38,10 @@ export default buildConfig({
     },
   }),
   plugins: [
+    // Zero-config — the toolkit infers draft behavior from each collection's
+    // `versions.drafts`, preview URLs from `admin.livePreview.url`, the auth
+    // collection from `admin.user`, and the site URL from `serverURL` above.
     contentToolkitPlugin({
-      siteUrl: process.env.SITE_URL || 'http://localhost:3000',
-      previewSecret: process.env.PREVIEW_SECRET || 'preview-secret',
-      previewPaths: {
-        pages: '',
-        posts: '/blog',
-      },
-      sectionBlockSlugs: ['fullWidth', 'twoColumn', 'ctaBanner', 'headingOnly'],
-      draftBehavior: {
-        pages: 'always-draft',
-        posts: 'always-draft',
-      },
       domainPrompts: [
         {
           name: 'sampleSiteVocabulary',
@@ -58,14 +51,14 @@ export default buildConfig({
             'This is a sample CMS used to exercise the payload-mcp-toolkit plugin.',
             '',
             'Content model:',
-            '- "Pages" = top-level marketing/info pages built from section blocks (drafts enabled).',
-            '- "Posts" = blog articles with category, authors, cover image, and tags (drafts enabled).',
+            '- "Pages" = marketing/info pages with a `layout` blocks field (drafts enabled).',
+            '- "Posts" = blog articles with category, authors, cover image, tags (drafts enabled).',
             '- "Authors" = people who write posts.',
             '- "Categories" = taxonomy for posts.',
             '',
             'Common workflows:',
-            '- Compose a page with composePageLayout → updateDocument(layout) → publishDraft.',
-            '- Create a post with create → uploadMedia for cover → updateDocument → publishDraft.',
+            '- Build a page: create → patchLayout(append blocks) → publishDraft.',
+            '- Create a post: create → uploadMedia for cover → updateDocument → publishDraft.',
           ].join('\n'),
         },
       ],

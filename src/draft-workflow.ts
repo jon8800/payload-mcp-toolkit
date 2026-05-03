@@ -1,5 +1,4 @@
 import type { CollectionConfig, PayloadRequest } from 'payload'
-import type { DraftBehavior } from './types'
 
 /** MCP response shape used by overrideResponse */
 interface McpResponse {
@@ -19,35 +18,36 @@ interface McpCollectionConfig {
     response: McpResponse,
     doc: Record<string, unknown>,
     req: PayloadRequest,
-  ) => McpResponse
+  ) => McpResponse | Promise<McpResponse>
 }
 
 interface GenerateOptions {
-  /** Base site URL for preview links */
-  siteUrl: string
-  /** Preview authentication secret */
-  previewSecret: string
   /**
-   * Per-collection URL path prefix used when constructing preview URLs.
-   * Defaults to `/{slug}` for collections not in the map.
+   * Optional absolute base URL prepended to relative preview paths returned
+   * by the collection's own preview URL function. Resolved upstream from
+   * (in order): `options.preview.siteUrl`, `incomingConfig.serverURL`,
+   * `process.env.NEXT_PUBLIC_SERVER_URL`, `process.env.SITE_URL`. May be
+   * undefined — relative-path returns will then be skipped.
    */
-  previewPaths?: Record<string, string>
+  siteUrl?: string
   /** Per-collection draft behavior overrides */
-  draftBehavior?: Record<string, DraftBehavior>
+  draftBehavior?: Record<string, 'always-draft' | 'always-publish'>
   /** Collection slugs to exclude from MCP */
   excludeCollections?: string[]
+  /** Disable preview URL injection entirely */
+  previewDisabled?: boolean
 }
 
 /**
- * Determines the draft behavior for a collection based on its config and user overrides.
+ * Determines the draft behavior for a collection.
  *
- * - If the collection has no `versions.drafts`: always 'publish' regardless of override
- * - If the user specified an override: use that override
- * - Default: 'always-draft' for draft-enabled collections, 'publish' for others
+ * - No drafts configured → 'publish' (raw update allowed; no draft concept)
+ * - Drafts configured + override given → use override
+ * - Drafts configured + no override → 'always-draft' (raw update locked)
  */
 export function getDraftBehavior(
   collection: CollectionConfig,
-  options?: { draftBehavior?: Record<string, DraftBehavior> },
+  options?: { draftBehavior?: Record<string, 'always-draft' | 'always-publish'> },
 ): 'always-draft' | 'always-publish' | 'publish' {
   const hasDrafts =
     typeof collection.versions === 'object' &&
@@ -64,46 +64,85 @@ export function getDraftBehavior(
 }
 
 /**
- * Builds a preview URL for a draft document.
+ * Build a preview URL for a draft document by delegating to the collection's
+ * own configured preview URL function. Tries `admin.livePreview.url` first
+ * (the modern API), then `admin.preview` (the older `GeneratePreviewURL`).
  *
- * Path is `${siteUrl}/next/preview?...`. Path prefix per collection comes
- * from `previewPaths`, defaulting to `/{collectionSlug}` when not configured.
+ * If neither is configured, or the function returns null/undefined/empty,
+ * returns null and the override response will skip preview injection.
  */
-function buildPreviewUrl(
+async function resolvePreviewUrl(
+  collection: CollectionConfig,
   doc: Record<string, unknown>,
-  collectionSlug: string,
-  siteUrl: string,
-  previewSecret: string,
-  previewPaths?: Record<string, string>,
-): string {
-  const slug = (doc.slug as string) || ''
-  const prefix = previewPaths?.[collectionSlug] ?? `/${collectionSlug}`
-  const path = `${prefix}/${slug}`
+  req: PayloadRequest,
+  siteUrl: string | undefined,
+): Promise<string | null> {
+  const admin = (collection.admin ?? {}) as Record<string, any>
+  const locale = (req as any).locale ?? 'en'
 
-  const params = new URLSearchParams({
-    slug,
-    collection: collectionSlug,
-    path,
-    previewSecret,
-  })
+  let raw: string | null | undefined
 
-  return `${siteUrl}/next/preview?${params.toString()}`
+  const livePreviewUrl = admin.livePreview?.url
+  if (typeof livePreviewUrl === 'function') {
+    try {
+      raw = await livePreviewUrl({
+        data: doc,
+        locale: { code: locale, label: locale },
+        req,
+        payload: req.payload,
+        collectionConfig: collection as any,
+      })
+    } catch {
+      raw = null
+    }
+  } else if (typeof livePreviewUrl === 'string') {
+    raw = livePreviewUrl
+  }
+
+  if (!raw && typeof admin.preview === 'function') {
+    try {
+      raw = await admin.preview(doc, {
+        locale,
+        req,
+        token: null,
+      })
+    } catch {
+      raw = null
+    }
+  }
+
+  if (!raw || typeof raw !== 'string') return null
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    return raw
+  }
+
+  if (!siteUrl) return null
+
+  const base = siteUrl.endsWith('/') ? siteUrl.slice(0, -1) : siteUrl
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${base}${path}`
 }
 
-/**
- * Creates an overrideResponse function for a draft-enabled collection.
- * When a document has `_status === 'draft'`, appends a preview URL to the response.
- */
 function createOverrideResponse(
-  collectionSlug: string,
-  siteUrl: string,
-  previewSecret: string,
-  previewPaths?: Record<string, string>,
+  collection: CollectionConfig,
+  siteUrl: string | undefined,
 ): McpCollectionConfig['overrideResponse'] {
-  return (response: McpResponse, doc: Record<string, unknown>): McpResponse => {
+  return async (response, doc, req): Promise<McpResponse> => {
     if (doc._status !== 'draft') return response
 
-    const previewUrl = buildPreviewUrl(doc, collectionSlug, siteUrl, previewSecret, previewPaths)
+    const previewUrl = await resolvePreviewUrl(collection, doc, req, siteUrl)
+    if (!previewUrl) {
+      return {
+        content: [
+          ...response.content,
+          {
+            type: 'text',
+            text: '\n📋 This document is a draft. Use the admin panel to preview it.',
+          },
+        ],
+      }
+    }
 
     return {
       content: [
@@ -120,12 +159,17 @@ function createOverrideResponse(
 /**
  * Generates the mcpCollections config object for the official mcpPlugin.
  *
- * For each collection:
+ * For each non-excluded collection:
  * - Determines enabled CRUD operations based on draft behavior
- * - For 'always-draft' collections: disables raw `update` to force clients through publishDraft tool
- * - Generates `overrideResponse` that appends preview URLs for draft documents
+ * - For 'always-draft' collections: disables raw `update` to force clients
+ *   through publishDraft / patchLayout / updateDocument (which preserve
+ *   draft semantics)
+ * - For draft collections: attaches an `overrideResponse` that appends a
+ *   preview URL — sourced from the collection's own livePreview/preview
+ *   function — to draft documents. Falls back to a generic admin-panel
+ *   message when no preview function is configured.
  *
- * @returns A record of collection slug to MCP collection config, plus the set of draft collection slugs
+ * @returns Map of slug → MCP collection config, plus the set of draft slugs
  */
 export function generateMcpCollectionConfigs(
   collections: CollectionConfig[],
@@ -138,13 +182,15 @@ export function generateMcpCollectionConfigs(
   const draftCollections = new Set<string>()
 
   const excludeSlugs = new Set([
-    'users',
     'payload-mcp-api-keys',
     ...(options.excludeCollections ?? []),
   ])
 
   for (const collection of collections) {
     if (excludeSlugs.has(collection.slug)) continue
+
+    // Auth-enabled collections are users — never expose them via MCP.
+    if ((collection as any).auth) continue
 
     const behavior = getDraftBehavior(collection, options)
 
@@ -164,13 +210,8 @@ export function generateMcpCollectionConfigs(
       enabled,
     }
 
-    if (draftCollections.has(collection.slug)) {
-      config.overrideResponse = createOverrideResponse(
-        collection.slug,
-        options.siteUrl,
-        options.previewSecret,
-        options.previewPaths,
-      )
+    if (draftCollections.has(collection.slug) && !options.previewDisabled) {
+      config.overrideResponse = createOverrideResponse(collection, options.siteUrl)
     }
 
     mcpCollections[collection.slug] = config

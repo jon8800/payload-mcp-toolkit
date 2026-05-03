@@ -5,6 +5,12 @@ export const Posts: CollectionConfig = {
   admin: {
     useAsTitle: 'title',
     defaultColumns: ['title', 'category', 'featured', '_status', 'publishedAt'],
+    livePreview: {
+      url: ({ data }) => {
+        const slug = (data?.slug as string) ?? ''
+        return slug ? `/blog/${slug}` : '/blog'
+      },
+    },
   },
   versions: {
     drafts: {
