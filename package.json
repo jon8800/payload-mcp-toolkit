@@ -40,7 +40,7 @@
     "build": "pnpm copyfiles && pnpm build:types && pnpm build:swc",
     "build:swc": "swc ./src -d ./dist --config-file .swcrc --strip-leading-paths",
     "build:types": "tsc -p tsconfig.build.json",
-    "clean": "rimraf dist *.tsbuildinfo",
+    "clean": "rimraf dist",
     "copyfiles": "copyfiles -u 1 \"src/**/*.{html,css,scss,svg,json}\" dist/",
     "dev": "next dev dev --turbo",
     "dev:generate-importmap": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload generate:importmap",
