@@ -153,6 +153,8 @@ export function contentToolkitPlugin(options: ContentToolkitOptions): Plugin {
       // Set req.user from the API key's linked user so custom tools
       // can use overrideAccess: false and relationship field validation
       // has a valid user context for access control checks.
+      // Safe: getDefault() throws inside the official plugin if the API key
+      // has no linked user, so settings.user is guaranteed to exist here.
       overrideAuth: async (req, getDefault) => {
         const settings = await getDefault()
         req.user = (settings as any).user

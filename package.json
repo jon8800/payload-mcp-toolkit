@@ -1,8 +1,17 @@
 {
   "name": "payload-mcp-toolkit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Schema-aware MCP toolkit for Payload CMS — wraps the official @payloadcms/plugin-mcp with introspected prompts, resources, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.",
   "license": "MIT",
+  "author": "jon8800",
+  "homepage": "https://github.com/jon8800/payload-mcp-toolkit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jon8800/payload-mcp-toolkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jon8800/payload-mcp-toolkit/issues"
+  },
   "type": "module",
   "keywords": [
     "payload",
@@ -26,17 +35,18 @@
   "files": [
     "dist"
   ],
+  "sideEffects": false,
   "scripts": {
     "build": "pnpm copyfiles && pnpm build:types && pnpm build:swc",
     "build:swc": "swc ./src -d ./dist --config-file .swcrc --strip-leading-paths",
-    "build:types": "tsc --outDir dist --rootDir ./src",
+    "build:types": "tsc -p tsconfig.build.json",
     "clean": "rimraf dist *.tsbuildinfo",
     "copyfiles": "copyfiles -u 1 \"src/**/*.{html,css,scss,svg,json}\" dist/",
     "dev": "next dev dev --turbo",
     "dev:generate-importmap": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload generate:importmap",
     "dev:generate-types": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload generate:types",
     "dev:payload": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload",
-    "lint": "eslint",
+    "prepublishOnly": "pnpm clean && pnpm build && pnpm test",
     "test": "vitest run",
     "test:watch": "vitest"
   },

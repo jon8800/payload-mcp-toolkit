@@ -76,6 +76,7 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
       // Find inbound references via the reverse index
       const inboundEdges = reverseIndex.get(collection) ?? []
       const references: InboundReference[] = []
+      const failedEdges: { fromCollection: string; fieldName: string; error: string }[] = []
 
       for (const edge of inboundEdges) {
         // Skip Payload's internal bookkeeping collections — they don't represent meaningful editor concerns
@@ -104,10 +105,33 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
               sampleIds: result.docs.map((d: any) => d.id),
             })
           }
-        } catch {
-          // A failed inbound query (e.g. permissions) shouldn't block the delete check —
-          // continue but the missing edge will simply be absent from the impact summary.
-          continue
+        } catch (error) {
+          // Fail closed: an unverified edge means we don't actually know whether
+          // the target is referenced. Record it and refuse the delete unless the
+          // caller explicitly opts in via `confirm: true`.
+          failedEdges.push({
+            fromCollection: edge.fromCollection,
+            fieldName: edge.fieldName,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+
+      if (failedEdges.length > 0 && !confirm) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                success: false,
+                refused: true,
+                message:
+                  `Refusing to delete ${collection}#${documentId}: could not verify ` +
+                  `${failedEdges.length} inbound reference path(s). Pass confirm=true to delete anyway.`,
+                unverifiedEdges: failedEdges,
+              }),
+            },
+          ],
         }
       }
 

@@ -46,7 +46,7 @@ export function createUploadMediaTool(options?: {
       let contentType: string
       let filename: string
       try {
-        const result = await validateAndFetchUrl(url)
+        const result = await validateAndFetchUrl(url, { maxBytes: maxFileSize })
         buffer = result.buffer
         contentType = result.contentType
         filename = result.filename

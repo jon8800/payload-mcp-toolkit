@@ -37,7 +37,7 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 
 *Lifecycle / safety*
 - `publishDraft` — flip `_status` from draft to published.
-- `schedulePublish` — stamp a future `publishedAt` on a draft (auto-registered only for collections that have both drafts AND a `publishedAt` date field; **requires a Payload jobs queue or external worker to actually flip status at the appointed time** — see [Payload Jobs Queue](https://payloadcms.com/docs/jobs-queue/scheduled-jobs)).
+- `schedulePublish` — **bring your own scheduler.** Stamps a future `publishedAt` on a draft and leaves `_status: 'draft'`; it does **not** itself flip status at the appointed time. Auto-registered only for collections that have both drafts AND a `publishedAt` date field. To actually publish on schedule, you must wire up one of: a [Payload Jobs Queue scheduled task](https://payloadcms.com/docs/jobs-queue/scheduled-jobs), an external cron worker, or a `beforeRead` hook that resolves status on the fly. Without one of those, scheduled drafts stay drafts forever — the tool says so in its response, but it's still a footgun if you skim past it.
 - `listVersions` — recent saved versions of a draft document with id/status/timestamp/displayName.
 - `restoreVersion` — roll a document back to a saved version (creates a new version on top, so itself reversible).
 - `safeDelete` — relationship-aware delete. Walks the introspected relationship graph, refuses with a structured impact summary if other documents reference the target. Override with `confirm: true` after reviewing.

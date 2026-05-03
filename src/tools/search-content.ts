@@ -196,10 +196,21 @@ function buildHit(doc: Record<string, any>, missingFields?: string[]): SearchHit
   }
 
   if (missingFields?.length) {
-    hit.missingFields = missingFields.filter((f) => isFieldEmpty(doc[f]))
+    hit.missingFields = missingFields.filter((f) => isFieldEmpty(getByPath(doc, f)))
   }
 
   return hit
+}
+
+function getByPath(doc: Record<string, any>, path: string): unknown {
+  // Walk dotted paths so `meta.description` reads doc.meta?.description rather
+  // than the literal key `"meta.description"`. Matches the `where` keys we emit.
+  let current: any = doc
+  for (const segment of path.split('.')) {
+    if (current === null || current === undefined) return undefined
+    current = current[segment]
+  }
+  return current
 }
 
 function isFieldEmpty(value: unknown): boolean {
