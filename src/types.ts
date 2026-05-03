@@ -1,52 +1,65 @@
-import type { CollectionConfig, Block, Config, GlobalConfig } from 'payload'
-
-/** Draft behavior per collection */
-export type DraftBehavior = 'always-draft' | 'always-publish'
-
-/** Configuration for the content toolkit plugin */
+/**
+ * payload-mcp-toolkit configuration.
+ *
+ * The plugin works with zero options — every field below is an escape hatch
+ * for the cases where Payload's own config doesn't carry enough signal.
+ */
 export interface ContentToolkitOptions {
-  /** Base URL of the site (used for preview URLs). e.g. "https://example.com" */
-  siteUrl: string
+  /**
+   * Preview URL behavior. The toolkit reads `collection.admin.livePreview.url`
+   * (or `collection.admin.preview` as a fallback) when generating preview links
+   * for draft documents. Provide this object only to override what Payload
+   * already knows.
+   */
+  preview?: {
+    /**
+     * Absolute base URL prepended to relative preview paths. Defaults to
+     * `incomingConfig.serverURL`, then `process.env.NEXT_PUBLIC_SERVER_URL`,
+     * then `process.env.SITE_URL`. If none of those resolve and your preview
+     * URL function returns a relative path, no preview URL is appended.
+     */
+    siteUrl?: string
 
-  /** Secret used for preview URL authentication */
-  previewSecret: string
+    /**
+     * Disable preview URL injection entirely.
+     */
+    disabled?: boolean
+  }
 
   /**
-   * Per-collection URL path prefix used when constructing preview URLs.
-   * Keys are collection slugs; values are the path segment placed before the doc slug.
-   * Use an empty string for collections that live at the site root (e.g. pages).
+   * Per-collection draft behavior overrides. The default behavior is inferred
+   * from each collection's `versions.drafts` setting:
+   * - drafts enabled  → `'always-draft'` (raw `update` is locked; clients go
+   *   through `publishDraft` / `patchLayout` / `updateDocument` which preserve
+   *   draft semantics)
+   * - drafts disabled → `'always-publish'`
    *
-   * Example:
-   *   {
-   *     posts: '/blog',
-   *     products: '/shop',
-   *     pages: '',
-   *   }
-   *
-   * Collections without an entry default to `/{slug}`.
+   * Override per slug only if you need to allow raw publish on a draftable
+   * collection.
    */
-  previewPaths?: Record<string, string>
+  draftBehavior?: Record<string, 'always-draft' | 'always-publish'>
 
   /**
-   * Explicit list of block slugs that should be treated as **section** blocks
-   * (top-level layout containers). Any block not in this list is treated as
-   * a **leaf** block (composable inside a section's `blocks` field).
-   *
-   * When omitted, the toolkit falls back to a heuristic: blocks that contain
-   * a nested `blocks`-type field are sections, all others are leaves. This
-   * heuristic mis-classifies "fixed" sections (sections with no nested blocks
-   * but their own standalone fields, e.g. a CTA banner). Pass this option
-   * to disambiguate.
-   *
-   * Example: `['hero', 'fullWidth', 'twoColumn', 'ctaBanner']`
+   * Override the auth collection used for API key linkage. By default the
+   * toolkit scans `incomingConfig.collections` for the first collection with
+   * `auth: true`, preferring one named `'users'`.
    */
-  sectionBlockSlugs?: string[]
+  userCollection?: string
 
-  /** Site-specific domain prompts that teach the AI business vocabulary */
+  /**
+   * Hide collections or globals from the MCP surface. Useful for internal
+   * bookkeeping collections that should not be exposed to AI clients.
+   */
+  exclude?: {
+    collections?: string[]
+    globals?: string[]
+  }
+
+  /**
+   * Site-specific domain prompts that teach the AI business vocabulary.
+   * Merged with the auto-generated prompts.
+   */
   domainPrompts?: DomainPrompt[]
-
-  /** Per-collection draft behavior overrides (keyed by collection slug) */
-  draftBehavior?: Record<string, DraftBehavior>
 
   /** Media upload configuration */
   mediaUpload?: {
@@ -55,12 +68,6 @@ export interface ContentToolkitOptions {
     /** Media collection slug (default: 'media') */
     collectionSlug?: string
   }
-
-  /** Collections to exclude from MCP exposure */
-  excludeCollections?: string[]
-
-  /** Globals to exclude from MCP exposure */
-  excludeGlobals?: string[]
 }
 
 /** A domain prompt that teaches the AI site-specific vocabulary */
@@ -97,29 +104,46 @@ export interface CollectionSchema {
   searchableFields: string[]
 }
 
-/** Block nesting classification */
-export type BlockNestingType = 'composable' | 'constrained' | 'fixed'
-
-/** Introspected section block metadata */
-export interface SectionBlockSchema {
-  slug: string
-  nestingType: BlockNestingType
-  acceptedLeafSlugs: string[]
-  maxRows?: number
-  fields: FieldSchema[]
-}
-
-/** Introspected leaf block metadata */
-export interface LeafBlockSchema {
+/**
+ * One block in the catalog. Flat — no section/leaf distinction. Whether a
+ * block can nest other blocks is encoded in the `BlockNestingMap` keyed by
+ * the path to its `blocks` field.
+ */
+export interface BlockSchema {
   slug: string
   fields: FieldSchema[]
 }
 
-/** Complete block catalog */
+/**
+ * Flat catalog of every block referenced by the schema.
+ */
 export interface BlockCatalog {
-  sections: SectionBlockSchema[]
-  leaves: LeafBlockSchema[]
+  blocks: BlockSchema[]
 }
+
+/**
+ * One entry per `blocks`-typed field anywhere in the schema.
+ *
+ * `path` is `<owner>.<dottedFieldPath>` where owner is the collection or
+ * block slug that contains the field. Values list the slugs that field
+ * accepts. The AI uses this to compose blocks at any nesting depth without
+ * us pre-classifying anything as a "section" or "leaf".
+ */
+export interface BlockNestingEdge {
+  /** Owner of the blocks field — either a collection slug or a block slug */
+  owner: string
+  /** Whether the owner is a collection or a block */
+  ownerType: 'collection' | 'block'
+  /** Dotted path to the blocks field within the owner (e.g. `layout`, `hero.content`) */
+  fieldPath: string
+  /** Block slugs that this field accepts */
+  acceptedBlockSlugs: string[]
+  /** Optional row cap from the field config */
+  maxRows?: number
+}
+
+/** Map of every blocks-field in the schema to the slugs it accepts */
+export type BlockNestingMap = BlockNestingEdge[]
 
 /** Relationship edge in the collection graph */
 export interface RelationshipEdge {

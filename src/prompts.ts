@@ -1,5 +1,6 @@
 import type {
   BlockCatalog,
+  BlockNestingMap,
   CollectionSchema,
   DomainPrompt,
   RelationshipEdge,
@@ -8,18 +9,19 @@ import type {
 /**
  * Generate MCP prompts that teach the AI about the content model.
  *
- * Auto-generates three prompts (content model overview, block composition guide,
- * draft workflow guide) and merges with any user-provided domain prompts.
+ * Auto-generates content model overview, block composition guide, and
+ * draft workflow guide. User-supplied domain prompts are appended.
  */
 export function generatePrompts(
   schemas: Map<string, CollectionSchema>,
   catalog: BlockCatalog,
+  nesting: BlockNestingMap,
   relationships: RelationshipEdge[],
   domainPrompts?: DomainPrompt[],
 ) {
   const prompts = [
     buildContentModelOverview(schemas, relationships),
-    buildBlockCompositionGuide(catalog),
+    buildBlockCompositionGuide(catalog, nesting),
     buildDraftWorkflowGuide(schemas),
   ]
 
@@ -66,7 +68,6 @@ function buildContentModelOverview(
         lines.push(`Live preview: ${schema.hasLivePreview ? 'yes' : 'no'}`)
         lines.push('')
 
-        // Fields summary
         lines.push('### Fields')
         for (const field of schema.fields) {
           const parts = [`- **${field.name}** (${field.type})`]
@@ -87,7 +88,6 @@ function buildContentModelOverview(
         }
         lines.push('')
 
-        // Relationships
         const collRels = relationships.filter((r) => r.fromCollection === slug)
         if (collRels.length > 0) {
           lines.push('### Relationships')
@@ -95,9 +95,7 @@ function buildContentModelOverview(
             const targets = Array.isArray(rel.toCollection)
               ? rel.toCollection.join(', ')
               : rel.toCollection
-            lines.push(
-              `- ${rel.fieldName} → ${targets}${rel.hasMany ? ' (hasMany)' : ''}`,
-            )
+            lines.push(`- ${rel.fieldName} → ${targets}${rel.hasMany ? ' (hasMany)' : ''}`)
           }
           lines.push('')
         }
@@ -115,56 +113,67 @@ function buildContentModelOverview(
   }
 }
 
-function buildBlockCompositionGuide(catalog: BlockCatalog) {
+function buildBlockCompositionGuide(catalog: BlockCatalog, nesting: BlockNestingMap) {
   return {
     name: 'blockCompositionGuide',
     title: 'Block Composition Guide',
     description:
-      'Explains the section/leaf block hierarchy, valid nesting rules, and how to compose page layouts.',
+      'Lists every block type, its fields, and which slugs each blocks-typed field accepts. Use this with the relationshipGraph and collectionSchema resources to compose layouts at any depth.',
     handler() {
       const lines: string[] = [
         '# Block Composition Guide',
         '',
-        'Pages are built from **section** blocks. Each section can contain **leaf** blocks according to its nesting rules.',
+        'Every block has a `blockType` discriminator plus its own fields. A block may include one or more `blocks`-typed fields that nest other blocks. The accepted slugs per field are listed below — recurse into the same map for deeper nesting.',
         '',
       ]
 
-      // Section blocks
-      lines.push('## Section Blocks')
-      for (const section of catalog.sections) {
-        lines.push(`### ${section.slug} (${section.nestingType})`)
+      lines.push('## Where blocks can nest')
+      lines.push('')
+      const collectionEdges = nesting.filter((e) => e.ownerType === 'collection')
+      const blockEdges = nesting.filter((e) => e.ownerType === 'block')
 
-        if (section.nestingType === 'fixed') {
-          lines.push('This section has no nested blocks — configure it with its own fields only.')
-        } else if (section.nestingType === 'constrained') {
+      if (collectionEdges.length > 0) {
+        lines.push('### In collections')
+        for (const edge of collectionEdges) {
+          const cap = edge.maxRows ? ` (max ${edge.maxRows})` : ''
           lines.push(
-            `Accepts only: ${section.acceptedLeafSlugs.join(', ')}`,
+            `- \`${edge.owner}.${edge.fieldPath}\`${cap} accepts: ${edge.acceptedBlockSlugs.join(', ') || '(none)'}`,
           )
-          if (section.maxRows) {
-            lines.push(`Maximum ${section.maxRows} leaf block(s).`)
-          }
-        } else {
-          lines.push(
-            `Accepts all leaf blocks: ${section.acceptedLeafSlugs.join(', ')}`,
-          )
-        }
-
-        if (section.fields.length > 0) {
-          lines.push('Section-level fields:')
-          for (const f of section.fields) {
-            lines.push(`  - ${f.name} (${f.type})${f.required ? ' *required*' : ''}`)
-          }
         }
         lines.push('')
       }
 
-      // Leaf blocks
-      lines.push('## Leaf Blocks')
-      for (const leaf of catalog.leaves) {
-        lines.push(`### ${leaf.slug}`)
-        if (leaf.fields.length > 0) {
-          for (const f of leaf.fields) {
-            lines.push(`  - ${f.name} (${f.type})${f.required ? ' *required*' : ''}`)
+      if (blockEdges.length > 0) {
+        lines.push('### In blocks (nested composition)')
+        for (const edge of blockEdges) {
+          const cap = edge.maxRows ? ` (max ${edge.maxRows})` : ''
+          lines.push(
+            `- block \`${edge.owner}\` field \`${edge.fieldPath}\`${cap} accepts: ${edge.acceptedBlockSlugs.join(', ') || '(none)'}`,
+          )
+        }
+        lines.push('')
+      }
+
+      lines.push('## Block fields')
+      lines.push('')
+      for (const block of catalog.blocks) {
+        lines.push(`### ${block.slug}`)
+        if (block.fields.length === 0) {
+          lines.push('(no fields)')
+        } else {
+          for (const f of block.fields) {
+            const parts = [`- ${f.name} (${f.type})`]
+            if (f.required) parts.push(' *required*')
+            if (f.options?.length) {
+              parts.push(` [${f.options.map((o) => o.value).join(', ')}]`)
+            }
+            if (f.relationTo) {
+              const targets = Array.isArray(f.relationTo)
+                ? f.relationTo.join(', ')
+                : f.relationTo
+              parts.push(` → ${targets}`)
+            }
+            lines.push(parts.join(''))
           }
         }
         lines.push('')
@@ -200,12 +209,7 @@ function buildDraftWorkflowGuide(schemas: Map<string, CollectionSchema>) {
         }
       }
 
-      const lines: string[] = [
-        '# Draft Workflow Guide',
-        '',
-        '## Collections with draft support',
-        '',
-      ]
+      const lines: string[] = ['# Draft Workflow Guide', '', '## Collections with draft support', '']
 
       if (draftCollections.length === 0) {
         lines.push('No collections have draft support enabled.')
@@ -222,11 +226,9 @@ function buildDraftWorkflowGuide(schemas: Map<string, CollectionSchema>) {
           '2. Draft documents are only visible via preview URLs or the admin panel — they are not public.',
         )
         lines.push(
-          '3. To publish a draft, update the document with `_status: "published"` or use the `publishDraft` tool.',
+          '3. To publish a draft, use the `publishDraft` tool (raw `update` is locked on always-draft collections).',
         )
-        lines.push(
-          '4. You can review a draft via its preview URL before publishing.',
-        )
+        lines.push('4. You can review a draft via its preview URL before publishing.')
       }
 
       lines.push('')

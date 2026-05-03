@@ -1,12 +1,11 @@
-import type { Block, CollectionConfig, Field, GlobalConfig } from 'payload'
+import type { Block, CollectionConfig, Field } from 'payload'
 import type {
   BlockCatalog,
-  BlockNestingType,
+  BlockNestingMap,
+  BlockSchema,
   CollectionSchema,
   FieldSchema,
-  LeafBlockSchema,
   RelationshipEdge,
-  SectionBlockSchema,
 } from './types'
 
 /**
@@ -19,8 +18,18 @@ export function introspectCollection(collection: CollectionConfig): CollectionSc
     .filter((f) => ['text', 'email'].includes(f.type) && ['name', 'title', 'slug'].includes(f.name))
     .map((f) => f.name)
 
-  const hasDrafts = !!(collection.versions && typeof collection.versions === 'object' && 'drafts' in collection.versions && collection.versions.drafts)
-  const hasLivePreview = !!(collection.admin && typeof collection.admin === 'object' && 'livePreview' in collection.admin && collection.admin.livePreview)
+  const hasDrafts = !!(
+    collection.versions &&
+    typeof collection.versions === 'object' &&
+    'drafts' in collection.versions &&
+    collection.versions.drafts
+  )
+  const hasLivePreview = !!(
+    collection.admin &&
+    typeof collection.admin === 'object' &&
+    'livePreview' in collection.admin &&
+    collection.admin.livePreview
+  )
 
   return {
     slug: collection.slug,
@@ -46,62 +55,57 @@ export function introspectCollections(
 }
 
 /**
- * Introspect block configs into a block catalog with section/leaf hierarchy and nesting rules.
- *
- * NOTE: In the Payload plugin context, blockReferences may or may not be resolved
- * depending on when introspection runs. This function handles both cases:
- * - If field.blocks contains resolved block objects, reads slugs from them
- * - If field.blocks is empty and field.blockReferences exists, uses those slugs directly
+ * Build a flat catalog of every block in the schema. Whether a block can
+ * nest other blocks is represented separately in the BlockNestingMap, not
+ * as a section/leaf classification — the AI reads both and composes
+ * arbitrarily-nested layouts from there.
  */
-export function introspectBlocks(
-  sectionBlocks: Block[],
-  leafBlocks: Block[],
-): BlockCatalog {
-  const leafSlugs = new Set(leafBlocks.map((b) => b.slug))
-
-  const sections: SectionBlockSchema[] = sectionBlocks.map((section) => {
-    const blockFields = findBlockFields(section.fields)
-
-    if (blockFields.length === 0) {
-      // Fixed section — no nested blocks
-      return {
-        slug: section.slug,
-        nestingType: 'fixed' as BlockNestingType,
-        acceptedLeafSlugs: [],
-        fields: extractFields(section.fields),
-      }
-    }
-
-    // Determine accepted leaf slugs from all blocks-type fields
-    const acceptedSlugs = new Set<string>()
-    let maxRows: number | undefined
-
-    for (const bf of blockFields) {
-      const slugs = getBlockSlugsFromField(bf)
-      for (const s of slugs) {
-        if (leafSlugs.has(s)) acceptedSlugs.add(s)
-      }
-      if (bf.maxRows) maxRows = bf.maxRows
-    }
-
-    const nestingType: BlockNestingType =
-      acceptedSlugs.size < leafSlugs.size || maxRows ? 'constrained' : 'composable'
-
-    return {
-      slug: section.slug,
-      nestingType,
-      acceptedLeafSlugs: [...acceptedSlugs],
-      maxRows,
-      fields: extractFields(section.fields),
-    }
-  })
-
-  const leaves: LeafBlockSchema[] = leafBlocks.map((leaf) => ({
-    slug: leaf.slug,
-    fields: extractFields(leaf.fields),
+export function introspectBlocks(blocks: Block[]): BlockCatalog {
+  const catalog: BlockSchema[] = blocks.map((block) => ({
+    slug: block.slug,
+    fields: extractFields(block.fields),
   }))
+  return { blocks: catalog }
+}
 
-  return { sections, leaves }
+/**
+ * Walk every collection and every block, recording each `blocks`-typed
+ * field's owner, dotted path, and accepted slugs.
+ *
+ * The AI uses this to compose layouts at any depth: it looks up which
+ * slugs the relevant field accepts, picks one, then if that block has
+ * its own `blocks` fields it recurses against the same map.
+ */
+export function buildBlockNestingMap(
+  collections: CollectionConfig[],
+  blocks: Block[],
+): BlockNestingMap {
+  const knownSlugs = new Set(blocks.map((b) => b.slug))
+  const edges: BlockNestingMap = []
+
+  for (const collection of collections) {
+    edges.push(
+      ...collectBlocksFieldEdges(collection.fields, {
+        owner: collection.slug,
+        ownerType: 'collection',
+        prefix: '',
+        knownSlugs,
+      }),
+    )
+  }
+
+  for (const block of blocks) {
+    edges.push(
+      ...collectBlocksFieldEdges(block.fields, {
+        owner: block.slug,
+        ownerType: 'block',
+        prefix: '',
+        knownSlugs,
+      }),
+    )
+  }
+
+  return edges
 }
 
 /**
@@ -142,17 +146,19 @@ function extractFields(fields: Field[]): FieldSchema[] {
 
       if ('required' in field && field.required) schema.required = true
       if ('hasMany' in field && field.hasMany) schema.hasMany = true
-      if ('relationTo' in field && field.relationTo) schema.relationTo = field.relationTo as string | string[]
+      if ('relationTo' in field && field.relationTo) {
+        schema.relationTo = field.relationTo as string | string[]
+      }
       if ('maxRows' in field && field.maxRows) schema.maxRows = field.maxRows
 
-      // Extract select options
       if (field.type === 'select' && 'options' in field && Array.isArray(field.options)) {
         schema.options = field.options.map((opt) =>
-          typeof opt === 'string' ? { label: opt, value: opt } : { label: String(opt.label), value: String(opt.value) },
+          typeof opt === 'string'
+            ? { label: opt, value: opt }
+            : { label: String(opt.label), value: String(opt.value) },
         )
       }
 
-      // Recurse into nested fields (arrays, groups)
       if (field.type === 'array' && 'fields' in field) {
         schema.fields = extractFields(field.fields)
       }
@@ -163,7 +169,6 @@ function extractFields(fields: Field[]): FieldSchema[] {
       result.push(schema)
     }
 
-    // Transparent containers — recurse without creating a named field
     if (field.type === 'tabs' && 'tabs' in field) {
       for (const tab of field.tabs) {
         if ('fields' in tab) {
@@ -210,7 +215,6 @@ function extractRelationships(
       })
     }
 
-    // Recurse into containers
     if (field.type === 'tabs' && 'tabs' in field) {
       for (const tab of field.tabs) {
         if ('fields' in tab) {
@@ -235,50 +239,93 @@ function extractRelationships(
   return rels
 }
 
-/**
- * Find all blocks-type fields within a field array (recursing into tabs/rows/etc).
- */
-function findBlockFields(fields: Field[]): Array<Field & { type: 'blocks' }> {
-  const result: Array<Field & { type: 'blocks' }> = []
-
-  for (const field of fields) {
-    if (field.type === 'blocks') {
-      result.push(field as Field & { type: 'blocks' })
-    }
-    if (field.type === 'tabs' && 'tabs' in field) {
-      for (const tab of field.tabs) {
-        if ('fields' in tab) {
-          result.push(...findBlockFields(tab.fields))
-        }
-      }
-    }
-    if (field.type === 'row' && 'fields' in field) {
-      result.push(...findBlockFields(field.fields))
-    }
-    if (field.type === 'collapsible' && 'fields' in field) {
-      result.push(...findBlockFields(field.fields))
-    }
-    if (field.type === 'group' && 'fields' in field) {
-      result.push(...findBlockFields(field.fields))
-    }
-  }
-
-  return result
+interface NestingScanContext {
+  owner: string
+  ownerType: 'collection' | 'block'
+  prefix: string
+  knownSlugs: Set<string>
 }
 
 /**
- * Get block slugs from a blocks-type field.
- * Handles both resolved blocks (field.blocks has objects) and unresolved blockReferences.
+ * Walk fields recording every `blocks`-typed field encountered, including
+ * those nested in tabs/rows/groups/arrays/collapsibles. Each entry carries
+ * the dotted path from the owner root to the field.
  */
-function getBlockSlugsFromField(field: Field & { type: 'blocks' }): string[] {
+function collectBlocksFieldEdges(fields: Field[], ctx: NestingScanContext): BlockNestingMap {
+  const edges: BlockNestingMap = []
+
+  for (const field of fields) {
+    if (field.type === 'blocks') {
+      const fieldName = 'name' in field && field.name ? field.name : ''
+      const fullPath = ctx.prefix ? `${ctx.prefix}.${fieldName}` : fieldName
+      const allSlugs = readBlockSlugs(field as Field & { type: 'blocks' })
+      const acceptedSlugs = allSlugs.filter((s) => ctx.knownSlugs.has(s))
+
+      const edge: BlockNestingMap[number] = {
+        owner: ctx.owner,
+        ownerType: ctx.ownerType,
+        fieldPath: fullPath,
+        acceptedBlockSlugs: acceptedSlugs,
+      }
+      const maxRows = (field as Field & { type: 'blocks' }).maxRows
+      if (typeof maxRows === 'number') edge.maxRows = maxRows
+      edges.push(edge)
+      continue
+    }
+
+    if (field.type === 'tabs' && 'tabs' in field) {
+      for (const tab of field.tabs) {
+        if (!('fields' in tab)) continue
+        const tabName = 'name' in tab && tab.name ? tab.name : ''
+        const tabPrefix = tabName
+          ? ctx.prefix
+            ? `${ctx.prefix}.${tabName}`
+            : tabName
+          : ctx.prefix
+        edges.push(...collectBlocksFieldEdges(tab.fields, { ...ctx, prefix: tabPrefix }))
+      }
+      continue
+    }
+    if (field.type === 'row' && 'fields' in field) {
+      edges.push(...collectBlocksFieldEdges(field.fields, ctx))
+      continue
+    }
+    if (field.type === 'collapsible' && 'fields' in field) {
+      edges.push(...collectBlocksFieldEdges(field.fields, ctx))
+      continue
+    }
+    if (field.type === 'group' && 'fields' in field && 'name' in field && field.name) {
+      const newPrefix = ctx.prefix ? `${ctx.prefix}.${field.name}` : field.name
+      edges.push(...collectBlocksFieldEdges(field.fields, { ...ctx, prefix: newPrefix }))
+      continue
+    }
+    if (field.type === 'array' && 'fields' in field && 'name' in field && field.name) {
+      const newPrefix = ctx.prefix ? `${ctx.prefix}.${field.name}[]` : `${field.name}[]`
+      edges.push(...collectBlocksFieldEdges(field.fields, { ...ctx, prefix: newPrefix }))
+      continue
+    }
+  }
+
+  return edges
+}
+
+/**
+ * Read block slugs from a blocks-typed field, handling both resolved
+ * (field.blocks contains objects) and unresolved (field.blockReferences
+ * holds slug strings) forms.
+ */
+function readBlockSlugs(field: Field & { type: 'blocks' }): string[] {
   const f = field as any
 
-  // Resolved blocks — field.blocks contains full block objects
-  if (Array.isArray(f.blocks) && f.blocks.length > 0 && typeof f.blocks[0] === 'object' && f.blocks[0].slug) {
+  if (
+    Array.isArray(f.blocks) &&
+    f.blocks.length > 0 &&
+    typeof f.blocks[0] === 'object' &&
+    f.blocks[0]?.slug
+  ) {
     return f.blocks.map((b: { slug: string }) => b.slug)
   }
 
-  // Unresolved — blockReferences contains slug strings
   if (Array.isArray(f.blockReferences) && f.blockReferences.length > 0) {
     return f.blockReferences.filter((ref: unknown) => typeof ref === 'string') as string[]
   }

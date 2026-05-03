@@ -23,13 +23,12 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 **Auto-generated resources** (machine-readable JSON for the LLM):
 - `blocks://catalog`, `collections://schema`, `collections://relationships`.
 
-**Custom tools** (11 total):
+**Custom tools (10, plus an auto-registered scheduler)**
 
 *Authoring*
-- `composePageLayout` — build a validated page layout from sections + leaves.
-- `patchLayout` — surgically append/prepend/insertAt/replaceAt sections on a doc's block-array field without round-tripping the whole array. Safer than `updateDocument` for incremental layout edits.
+- `patchLayout` — surgical append/prepend/insertAt/replaceAt against any blocks-typed field. Validates each block (recursively, at any depth) against the introspected nesting map. Safer than `updateDocument` for incremental layout edits.
 - `updateDocument` — Local-API based update that survives the upload-field bug in the official plugin.
-- `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe), create a Media doc.
+- `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe with streaming size cap), create a Media doc.
 
 *Discovery*
 - `resolveReference` — search collections by name/title/slug for relationship IDs.
@@ -37,14 +36,14 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 
 *Lifecycle / safety*
 - `publishDraft` — flip `_status` from draft to published.
-- `schedulePublish` — **bring your own scheduler.** Stamps a future `publishedAt` on a draft and leaves `_status: 'draft'`; it does **not** itself flip status at the appointed time. Auto-registered only for collections that have both drafts AND a `publishedAt` date field. To actually publish on schedule, you must wire up one of: a [Payload Jobs Queue scheduled task](https://payloadcms.com/docs/jobs-queue/scheduled-jobs), an external cron worker, or a `beforeRead` hook that resolves status on the fly. Without one of those, scheduled drafts stay drafts forever — the tool says so in its response, but it's still a footgun if you skim past it.
-- `listVersions` — recent saved versions of a draft document with id/status/timestamp/displayName.
-- `restoreVersion` — roll a document back to a saved version (creates a new version on top, so itself reversible).
-- `safeDelete` — relationship-aware delete. Walks the introspected relationship graph, refuses with a structured impact summary if other documents reference the target. Override with `confirm: true` after reviewing.
+- `schedulePublish` — **bring your own scheduler.** Stamps a future `publishedAt` on a draft and leaves `_status: 'draft'`; it does **not** itself flip status at the appointed time. Auto-registered only for collections that have both drafts AND a `publishedAt` date field. Wire up a [Payload Jobs Queue task](https://payloadcms.com/docs/jobs-queue/scheduled-jobs), external cron, or `beforeRead` hook to actually publish on schedule.
+- `listVersions` — recent saved versions of a draft document.
+- `restoreVersion` — roll a document back to a saved version (creates a new version on top, so reversible).
+- `safeDelete` — relationship-aware delete. Walks the relationship graph, refuses with a structured impact summary if other documents reference the target. Fail-closed on permission errors. Override with `confirm: true`.
 
 **Draft workflow** wired into the official plugin's `mcpCollections`:
-- Disables raw `update` for `always-draft` collections so clients go through `publishDraft` (or `patchLayout` / `updateDocument`, both of which preserve draft semantics).
-- Appends preview URLs to draft responses (path prefixes are configurable via `previewPaths`).
+- For collections with `versions.drafts` enabled, disables raw `update` so clients go through `publishDraft` / `patchLayout` / `updateDocument` (all of which preserve draft semantics).
+- Appends preview URLs to draft responses by calling each collection's own `admin.livePreview.url` or `admin.preview` function — no separate path config needed.
 
 ## Install
 
@@ -54,7 +53,7 @@ pnpm add payload-mcp-toolkit @payloadcms/plugin-mcp
 
 Peer dependencies: `payload` ^3, `@payloadcms/plugin-mcp` ^3, `zod` ^3.
 
-## Use
+## Use — zero config
 
 ```ts
 // payload.config.ts
@@ -62,43 +61,61 @@ import { contentToolkitPlugin } from 'payload-mcp-toolkit'
 
 export default buildConfig({
   // ...your collections, blocks, globals
-  plugins: [
-    contentToolkitPlugin({
-      siteUrl: process.env.SITE_URL!,
-      previewSecret: process.env.PREVIEW_SECRET!,
-      previewPaths: {
-        pages: '',          // pages live at /
-        posts: '/blog',     // posts live at /blog/:slug
-      },
-      draftBehavior: {
-        pages: 'always-draft',
-        posts: 'always-draft',
-      },
-      domainPrompts: [
-        // Optional site-specific vocabulary — see examples/
-      ],
-    }),
+  serverURL: process.env.SITE_URL,                 // used for absolute preview URLs
+  admin: { user: 'users' },                        // your auth collection
+  plugins: [contentToolkitPlugin()],
+})
+```
+
+That's it. The toolkit infers everything from your Payload config:
+- **Draft behavior** — collections with `versions.drafts` get `always-draft` (raw update locked); others publish immediately.
+- **Preview URLs** — pulled from each collection's `admin.livePreview.url` (or `admin.preview` as a fallback). If neither is set, draft responses just get a generic admin-panel hint.
+- **Block nesting** — for every blocks-typed field, anywhere in the schema, the toolkit records which slugs are allowed. The AI composes layouts at any depth from that map.
+- **Auth collection** — comes from `admin.user` (the standard Payload setting). The official plugin handles this directly.
+
+## Optional configuration
+
+Every option is an escape hatch — pass only what you need:
+
+```ts
+contentToolkitPlugin({
+  preview: {
+    siteUrl: 'https://staging.example.com', // override serverURL
+    disabled: false,                        // set true to suppress preview URLs entirely
+  },
+  draftBehavior: {
+    posts: 'always-publish',  // allow raw update on a draftable collection
+  },
+  userCollection: 'admins',  // override admin.user
+  exclude: {
+    collections: ['internal-bookkeeping'],
+    globals: ['secret-config'],
+  },
+  mediaUpload: {
+    maxFileSize: 25 * 1024 * 1024,
+    collectionSlug: 'images',
+  },
+  domainPrompts: [
+    {
+      name: 'siteVocabulary',
+      title: 'Site Vocabulary',
+      description: 'Site-specific terms the AI should know.',
+      content: '...',
+    },
   ],
 })
 ```
 
-That's it. The toolkit reads your Payload config and registers everything against the official MCP plugin. Connect any MCP client to your Payload server and the LLM will see the prompts, resources, and tools.
-
-See `examples/angels-config.example.ts` for a fully-worked domain-prompt setup from a real-world site.
-
-## Configuration reference
-
-| Option | Type | Description |
-|---|---|---|
-| `siteUrl` | `string` | Base URL used to construct preview URLs. |
-| `previewSecret` | `string` | Secret embedded in the preview URL query. |
-| `previewPaths` | `Record<string, string>` | Per-collection URL path prefix. Defaults to `/{slug}` if omitted. Use `''` for collections at the site root. |
-| `draftBehavior` | `Record<string, 'always-draft' \| 'always-publish'>` | Override the default draft behavior per collection. |
-| `domainPrompts` | `DomainPrompt[]` | Custom prompts that teach the AI site-specific vocabulary. |
-| `mediaUpload.maxFileSize` | `number` | Max bytes for `uploadMedia` (default 10MB). |
-| `mediaUpload.collectionSlug` | `string` | Media collection slug (default `media`). |
-| `excludeCollections` | `string[]` | Collection slugs to hide from MCP. |
-| `excludeGlobals` | `string[]` | Global slugs to hide from MCP. |
+| Option | Description |
+|---|---|
+| `preview.siteUrl` | Base URL for preview links. Defaults to `serverURL`, then `NEXT_PUBLIC_SERVER_URL`/`SITE_URL` env vars. |
+| `preview.disabled` | Suppress preview URL injection on draft responses. |
+| `draftBehavior` | Per-collection override of inferred behavior. |
+| `userCollection` | Override `admin.user` for API key linkage. |
+| `exclude.collections` / `exclude.globals` | Hide from MCP exposure. |
+| `domainPrompts` | Site-specific vocabulary prompts. |
+| `mediaUpload.maxFileSize` | Default 10MB. Enforced as a streaming cap, not a post-buffer check. |
+| `mediaUpload.collectionSlug` | Default `'media'`. |
 
 ## Development
 

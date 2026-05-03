@@ -6,6 +6,12 @@ export const Pages: CollectionConfig = {
   admin: {
     useAsTitle: 'title',
     defaultColumns: ['title', 'slug', '_status'],
+    livePreview: {
+      url: ({ data }) => {
+        const slug = (data?.slug as string) ?? ''
+        return slug ? `/${slug}` : '/'
+      },
+    },
   },
   versions: {
     drafts: {

@@ -1,36 +1,74 @@
 import type {
   BlockCatalog,
+  BlockNestingMap,
   CollectionSchema,
   RelationshipEdge,
 } from './types'
 
 /**
- * Generate MCP resources that expose the block catalog,
- * collection schemas, and relationship graph as static JSON.
+ * Generate MCP resources that expose the introspected schema as static JSON.
+ *
+ * Four resources:
+ * - blocks://catalog — flat list of every block and its fields
+ * - blocks://nesting — per-blocks-field map of which slugs each field accepts
+ * - collections://schema — collection field metadata
+ * - collections://relationships — collection relationship graph
  */
 export function generateResources(
   schemas: Map<string, CollectionSchema>,
   catalog: BlockCatalog,
+  nesting: BlockNestingMap,
   relationships: RelationshipEdge[],
 ) {
   return [
-    buildBlockCatalogResource(catalog),
-    buildCollectionSchemaResource(schemas),
-    buildRelationshipGraphResource(relationships),
+    buildJsonResource({
+      name: 'blockCatalog',
+      title: 'Block Catalog',
+      description:
+        'Flat list of every block type and its fields. Pair with the blockNesting resource to know where each block can be placed.',
+      uri: 'blocks://catalog',
+      payload: catalog,
+    }),
+    buildJsonResource({
+      name: 'blockNesting',
+      title: 'Block Nesting Map',
+      description:
+        'For every blocks-typed field in the schema (in collections and inside other blocks), lists the block slugs that field accepts. Use this to compose nested layouts at any depth.',
+      uri: 'blocks://nesting',
+      payload: nesting,
+    }),
+    buildJsonResource({
+      name: 'collectionSchema',
+      title: 'Collection Schema',
+      description:
+        'JSON schema of all collections — fields, select options, and relationship targets.',
+      uri: 'collections://schema',
+      payload: collectionSchemasToObject(schemas),
+    }),
+    buildJsonResource({
+      name: 'relationshipGraph',
+      title: 'Relationship Graph',
+      description:
+        'JSON representation of the collection relationship graph — which collections link to which.',
+      uri: 'collections://relationships',
+      payload: relationships,
+    }),
   ]
 }
 
-// ─── Resource builders ────────────────────────────────────────────
-
-function buildBlockCatalogResource(catalog: BlockCatalog) {
-  const json = JSON.stringify(catalog, null, 2)
-
+function buildJsonResource(args: {
+  name: string
+  title: string
+  description: string
+  uri: string
+  payload: unknown
+}) {
+  const json = JSON.stringify(args.payload, null, 2)
   return {
-    name: 'blockCatalog',
-    title: 'Block Catalog',
-    description:
-      'JSON catalog of all block types — section/leaf hierarchy, nesting rules, and required fields.',
-    uri: 'blocks://catalog',
+    name: args.name,
+    title: args.title,
+    description: args.description,
+    uri: args.uri,
     mimeType: 'application/json',
     handler(uri: URL) {
       return {
@@ -40,42 +78,12 @@ function buildBlockCatalogResource(catalog: BlockCatalog) {
   }
 }
 
-function buildCollectionSchemaResource(schemas: Map<string, CollectionSchema>) {
+function collectionSchemasToObject(
+  schemas: Map<string, CollectionSchema>,
+): Record<string, CollectionSchema> {
   const obj: Record<string, CollectionSchema> = {}
   for (const [slug, schema] of schemas) {
     obj[slug] = schema
   }
-  const json = JSON.stringify(obj, null, 2)
-
-  return {
-    name: 'collectionSchema',
-    title: 'Collection Schema',
-    description:
-      'JSON schema of all collections — fields, select options, and relationship targets.',
-    uri: 'collections://schema',
-    mimeType: 'application/json',
-    handler(uri: URL) {
-      return {
-        contents: [{ uri: uri.href, text: json }],
-      }
-    },
-  }
-}
-
-function buildRelationshipGraphResource(relationships: RelationshipEdge[]) {
-  const json = JSON.stringify(relationships, null, 2)
-
-  return {
-    name: 'relationshipGraph',
-    title: 'Relationship Graph',
-    description:
-      'JSON representation of the collection relationship graph — which collections link to which.',
-    uri: 'collections://relationships',
-    mimeType: 'application/json',
-    handler(uri: URL) {
-      return {
-        contents: [{ uri: uri.href, text: json }],
-      }
-    },
-  }
+  return obj
 }
