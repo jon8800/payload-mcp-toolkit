@@ -99,13 +99,23 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const schedulePublish = createSchedulePublishTool(collectionSchemas, draftCollections)
     if (schedulePublish) tools.push(schedulePublish)
 
-    const mcpGlobals: Record<string, { enabled: boolean; description?: string }> = {}
+    // Globals get `find` only. The official plugin's `update<Global>` tool
+    // hits the same `convertCollectionSchemaToZod` path that crashes on
+    // richText / upload / blocks fields (here it throws
+    // `Cannot convert undefined or null to object` because globals/update.ts
+    // calls `Object.entries(convertedFields.shape)` and the fallback
+    // `z.record()` has no `.shape`). Until the toolkit's `updateDocument`
+    // gains global support, edit globals via the admin panel.
+    const mcpGlobals: Record<
+      string,
+      { enabled: { find: boolean; update: boolean }; description?: string }
+    > = {}
     const excludeGlobalSlugs = new Set(options.exclude?.globals ?? [])
     for (const global of (incomingConfig.globals ?? []) as Array<{ slug: string }>) {
       if (excludeGlobalSlugs.has(global.slug)) continue
       mcpGlobals[global.slug] = {
-        enabled: true,
-        description: `Manage ${global.slug} global settings`,
+        enabled: { find: true, update: false },
+        description: `Read ${global.slug} global settings`,
       }
     }
 

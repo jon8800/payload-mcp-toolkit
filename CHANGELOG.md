@@ -4,6 +4,17 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.3] - 2026-05-04
+
+### Fixed
+- Globals now register with `enabled: { find: true, update: false }`. The
+  official plugin's `update<Global>` tool hit the same schema-conversion
+  bug as the collection variant (`Cannot convert undefined or null to
+  object` from `Object.entries(convertedFields.shape)` on the
+  `z.record()` fallback). Read access (`find`) still works; updates need
+  to go through the admin panel until `updateDocument` gains global
+  support (planned for 0.4).
+
 ## [0.3.2] - 2026-05-04
 
 ### Fixed
