@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import { validateAndFetchUrl } from '../url-validator'
+import { errorMessage, stampMcpContext, textResponse } from './_helpers'
 
-const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -10,10 +11,6 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/gif',
 ])
 
-/**
- * Creates the uploadMedia MCP tool that fetches an image from a public URL,
- * validates it for SSRF safety and content type, then creates a Media document.
- */
 export function createUploadMediaTool(options?: {
   maxFileSize?: number
   collectionSlug?: string
@@ -51,40 +48,20 @@ export function createUploadMediaTool(options?: {
         contentType = result.contentType
         filename = result.filename
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error fetching URL: ${message}`,
-            },
-          ],
-        }
+        return textResponse(`Error fetching URL: ${errorMessage(error)}`)
       }
 
       if (!ALLOWED_IMAGE_TYPES.has(contentType)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: Unsupported Content-Type "${contentType}". ` +
-                `Allowed types: ${[...ALLOWED_IMAGE_TYPES].join(', ')}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error: Unsupported Content-Type "${contentType}". ` +
+            `Allowed types: ${[...ALLOWED_IMAGE_TYPES].join(', ')}`,
+        )
       }
 
       if (buffer.byteLength > maxFileSize) {
         const sizeMB = (buffer.byteLength / (1024 * 1024)).toFixed(2)
         const limitMB = (maxFileSize / (1024 * 1024)).toFixed(2)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: File size ${sizeMB}MB exceeds maximum ${limitMB}MB.`,
-            },
-          ],
-        }
+        return textResponse(`Error: File size ${sizeMB}MB exceeds maximum ${limitMB}MB.`)
       }
 
       const alt =
@@ -96,7 +73,7 @@ export function createUploadMediaTool(options?: {
           .trim() ||
         'Uploaded image'
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       try {
         const doc = await req.payload.create({
@@ -113,27 +90,14 @@ export function createUploadMediaTool(options?: {
           user: req.user,
         })
 
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Successfully uploaded "${filename}" to ${mediaSlug}.\n` +
-                `ID: ${doc.id}\n` +
-                `Filename: ${filename}\n` +
-                `Alt: ${alt}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Successfully uploaded "${filename}" to ${mediaSlug}.\n` +
+            `ID: ${doc.id}\n` +
+            `Filename: ${filename}\n` +
+            `Alt: ${alt}`,
+        )
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error creating media document: ${message}`,
-            },
-          ],
-        }
+        return textResponse(`Error creating media document: ${errorMessage(error)}`)
       }
     },
   }

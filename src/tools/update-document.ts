@@ -1,32 +1,33 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { CollectionSchema } from '../types'
+import {
+  DRAFT_NOTE,
+  errorMessage,
+  getDocDisplayName,
+  stampMcpContext,
+  textResponse,
+} from './_helpers'
+
+const MEDIA_SLUG = 'media'
 
 /**
- * Creates the updateDocument MCP tool that updates fields on an existing document.
- *
- * This is a custom replacement for the official plugin's update tools, which
- * fail on collections with upload fields due to a Zod schema generation bug.
- * Uses Payload's Local API directly, bypassing the problematic schema pipeline.
- *
- * @param collectionSchemas - Introspected collection schemas for validation and description
- * @param draftCollections - Set of collection slugs that support drafts
+ * Custom replacement for the official plugin's update tools, which fail on
+ * collections with upload fields due to a Zod schema generation bug. Uses
+ * Payload's Local API directly, bypassing the problematic schema pipeline.
  */
 export function createUpdateDocumentTool(
   collectionSchemas: Map<string, CollectionSchema>,
   draftCollections: Set<string>,
 ) {
-  const updatableSlugs = [...collectionSchemas.keys()].filter(
-    (slug) => slug !== 'media',
-  )
-
-  const collectionDescriptions = updatableSlugs
-    .map((slug) => {
-      const schema = collectionSchemas.get(slug)!
-      const fieldNames = schema.fields.map((f) => f.name).join(', ')
-      return `  - "${slug}": ${fieldNames}`
-    })
-    .join('\n')
+  const updatableSlugs: string[] = []
+  const descriptionLines: string[] = []
+  for (const [slug, schema] of collectionSchemas) {
+    if (slug === MEDIA_SLUG) continue
+    updatableSlugs.push(slug)
+    descriptionLines.push(`  - "${slug}": ${schema.fields.map((f) => f.name).join(', ')}`)
+  }
+  const collectionDescriptions = descriptionLines.join('\n')
 
   return {
     name: 'updateDocument',
@@ -64,51 +65,28 @@ export function createUpdateDocumentTool(
       try {
         data = JSON.parse(args.data)
       } catch {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Error: "data" must be a valid JSON string. Example: \'{"title": "New Title"}\'',
-            },
-          ],
-        }
+        return textResponse(
+          'Error: "data" must be a valid JSON string. Example: \'{"title": "New Title"}\'',
+        )
       }
 
       if (!collectionSchemas.has(collection)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: Unknown collection "${collection}". ` +
-                `Available: ${updatableSlugs.join(', ')}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error: Unknown collection "${collection}". Available: ${updatableSlugs.join(', ')}`,
+        )
       }
 
-      if (collection === 'media') {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Error: Use the uploadMedia tool to manage media files.',
-            },
-          ],
-        }
+      if (collection === MEDIA_SLUG) {
+        return textResponse('Error: Use the uploadMedia tool to manage media files.')
       }
 
       if (!data || Object.keys(data).length === 0) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Error: No fields provided in "data". Pass an object with field names and values to update.',
-            },
-          ],
-        }
+        return textResponse(
+          'Error: No fields provided in "data". Pass an object with field names and values to update.',
+        )
       }
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       const isDraftCollection = draftCollections.has(collection)
 
@@ -123,36 +101,18 @@ export function createUpdateDocumentTool(
           user: req.user,
         })
 
-        const displayName =
-          (doc as any).name ||
-          (doc as any).title ||
-          (doc as any).slug ||
-          documentId
-
+        const displayName = getDocDisplayName(doc, documentId)
         const updatedFields = Object.keys(data).join(', ')
-        const draftNote = isDraftCollection
-          ? ` Document is in draft status — use publishDraft to make it live.`
-          : ''
+        const draftNote = isDraftCollection ? DRAFT_NOTE : ''
 
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Updated "${displayName}" in ${collection} (ID: ${documentId}). ` +
-                `Changed fields: ${updatedFields}.${draftNote}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Updated "${displayName}" in ${collection} (ID: ${documentId}). ` +
+            `Changed fields: ${updatedFields}.${draftNote}`,
+        )
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error updating document ${documentId} in ${collection}: ${message}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error updating document ${documentId} in ${collection}: ${errorMessage(error)}`,
+        )
       }
     },
   }

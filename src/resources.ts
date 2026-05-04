@@ -43,7 +43,7 @@ export function generateResources(
       description:
         'JSON schema of all collections — fields, select options, and relationship targets.',
       uri: 'collections://schema',
-      payload: collectionSchemasToObject(schemas),
+      payload: Object.fromEntries(schemas),
     }),
     buildJsonResource({
       name: 'relationshipGraph',
@@ -78,12 +78,3 @@ function buildJsonResource(args: {
   }
 }
 
-function collectionSchemasToObject(
-  schemas: Map<string, CollectionSchema>,
-): Record<string, CollectionSchema> {
-  const obj: Record<string, CollectionSchema> = {}
-  for (const [slug, schema] of schemas) {
-    obj[slug] = schema
-  }
-  return obj
-}

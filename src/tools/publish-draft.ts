@@ -1,11 +1,13 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
+import {
+  errorMessage,
+  getDocDisplayName,
+  requireDraftCollection,
+  stampMcpContext,
+  textResponse,
+} from './_helpers'
 
-/**
- * Creates the publishDraft MCP tool that transitions a document from draft to published status.
- *
- * @param draftCollections - Set of collection slugs that support drafts
- */
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {
     name: 'publishDraft',
@@ -28,19 +30,10 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
     ) => {
       const { collection, documentId } = args
 
-      if (!draftCollections.has(collection)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error: Collection "${collection}" does not support drafts. ` +
-                `Draft-enabled collections: ${[...draftCollections].join(', ') || 'none'}`,
-            },
-          ],
-        }
-      }
+      const guard = requireDraftCollection(collection, draftCollections)
+      if (guard) return guard
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       try {
         const doc = await req.payload.update({
@@ -52,30 +45,14 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
           user: req.user,
         })
 
-        const displayName =
-          (doc as any).name ||
-          (doc as any).title ||
-          (doc as any).slug ||
-          documentId
-
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Successfully published "${displayName}" in ${collection} (ID: ${documentId}).`,
-            },
-          ],
-        }
+        const displayName = getDocDisplayName(doc, documentId)
+        return textResponse(
+          `Successfully published "${displayName}" in ${collection} (ID: ${documentId}).`,
+        )
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error publishing document ${documentId} in ${collection}: ${message}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error publishing document ${documentId} in ${collection}: ${errorMessage(error)}`,
+        )
       }
     },
   }

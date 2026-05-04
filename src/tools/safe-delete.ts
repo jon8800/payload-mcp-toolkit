@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { RelationshipEdge } from '../types'
+import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers'
 
 const SAMPLE_LIMIT = 5
 
@@ -11,28 +12,30 @@ interface InboundReference {
   sampleIds: (string | number)[]
 }
 
+interface ReverseEdge {
+  fromCollection: string
+  fieldName: string
+  hasMany: boolean
+}
+
 /**
- * Creates the safeDelete MCP tool that wraps the official delete operation
- * with a relationship-graph pre-check.
+ * safeDelete wraps the official delete operation with a relationship-graph
+ * pre-check.
  *
  * Workflow:
  * 1. Use the introspected relationshipGraph to find every (collection, field)
  *    pair that points TO the target collection.
- * 2. For each, query for documents that reference the target ID. Aggregate counts
- *    and a small sample of inbound document IDs.
- * 3. If any inbound references exist and `confirm` is false, refuse and return
- *    the impact summary so the caller (or the LLM driving it) can decide.
- * 4. If `confirm` is true OR there are no inbound references, perform the delete.
+ * 2. For each, query for documents that reference the target ID. Aggregate
+ *    counts and a small sample of inbound document IDs.
+ * 3. If any inbound references exist and `confirm` is false, refuse and
+ *    return the impact summary so the caller can decide.
+ * 4. Otherwise, perform the delete.
  *
  * Excludes built-in Payload bookkeeping collections from the inbound search.
  */
 export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
-  // Build a reverse index: target collection -> [(fromCollection, fieldName, hasMany)]
-  const reverseIndex = new Map<
-    string,
-    Array<{ fromCollection: string; fieldName: string; hasMany: boolean }>
-  >()
-
+  // reverseIndex: target collection slug → edges that reference it
+  const reverseIndex = new Map<string, ReverseEdge[]>()
   for (const edge of relationships) {
     const targets = Array.isArray(edge.toCollection) ? edge.toCollection : [edge.toCollection]
     for (const target of targets) {
@@ -71,89 +74,80 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
     ) => {
       const { collection, documentId, confirm = false } = args
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
-      // Find inbound references via the reverse index
-      const inboundEdges = reverseIndex.get(collection) ?? []
-      const references: InboundReference[] = []
-      const failedEdges: { fromCollection: string; fieldName: string; error: string }[] = []
+      const inboundEdges = (reverseIndex.get(collection) ?? []).filter(
+        (edge) => !edge.fromCollection.startsWith('payload-'),
+      )
 
-      for (const edge of inboundEdges) {
-        // Skip Payload's internal bookkeeping collections — they don't represent meaningful editor concerns
-        if (edge.fromCollection.startsWith('payload-')) continue
-
-        try {
-          const result = await req.payload.find({
+      const settled = await Promise.allSettled(
+        inboundEdges.map((edge) =>
+          req.payload.find({
             collection: edge.fromCollection as any,
             where: { [edge.fieldName]: { equals: documentId } } as any,
             limit: SAMPLE_LIMIT,
             select: { id: true } as any,
-            // CRITICAL: include drafts. Without this, a draft document referencing
-            // the target is invisible to the safety check and the delete is allowed
-            // through — exactly the failure mode this tool is supposed to prevent.
+            // CRITICAL: include drafts. Without this, a draft document
+            // referencing the target is invisible to the safety check and
+            // the delete is allowed through — exactly the failure mode this
+            // tool is supposed to prevent.
             draft: true,
             req,
             overrideAccess: false,
             user: req.user,
-          })
+          }),
+        ),
+      )
 
-          if (result.totalDocs > 0) {
-            references.push({
-              fromCollection: edge.fromCollection,
-              fieldName: edge.fieldName,
-              count: result.totalDocs,
-              sampleIds: result.docs.map((d: any) => d.id),
-            })
-          }
-        } catch (error) {
-          // Fail closed: an unverified edge means we don't actually know whether
-          // the target is referenced. Record it and refuse the delete unless the
-          // caller explicitly opts in via `confirm: true`.
+      const references: InboundReference[] = []
+      const failedEdges: { fromCollection: string; fieldName: string; error: string }[] = []
+
+      settled.forEach((outcome, i) => {
+        const edge = inboundEdges[i]
+        if (outcome.status === 'rejected') {
+          // Fail closed: an unverified edge means we don't know whether the
+          // target is referenced. Refuse the delete unless the caller opts in.
           failedEdges.push({
             fromCollection: edge.fromCollection,
             fieldName: edge.fieldName,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(outcome.reason),
+          })
+          return
+        }
+        const result = outcome.value
+        if (result.totalDocs > 0) {
+          references.push({
+            fromCollection: edge.fromCollection,
+            fieldName: edge.fieldName,
+            count: result.totalDocs,
+            sampleIds: result.docs.map((d: any) => d.id),
           })
         }
-      }
+      })
 
       if (failedEdges.length > 0 && !confirm) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                refused: true,
-                message:
-                  `Refusing to delete ${collection}#${documentId}: could not verify ` +
-                  `${failedEdges.length} inbound reference path(s). Pass confirm=true to delete anyway.`,
-                unverifiedEdges: failedEdges,
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          success: false,
+          refused: true,
+          message:
+            `Refusing to delete ${collection}#${documentId}: could not verify ` +
+            `${failedEdges.length} inbound reference path(s). Pass confirm=true to delete anyway.`,
+          unverifiedEdges: failedEdges,
+        })
       }
 
       const totalReferences = references.reduce((sum, r) => sum + r.count, 0)
 
       if (totalReferences > 0 && !confirm) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: false,
-                refused: true,
-                message:
-                  `Refusing to delete ${collection}#${documentId}: ${totalReferences} inbound reference(s) ` +
-                  `found across ${references.length} field path(s). Pass confirm=true to delete anyway.`,
-                totalReferences,
-                references,
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          success: false,
+          refused: true,
+          message:
+            `Refusing to delete ${collection}#${documentId}: ${totalReferences} inbound reference(s) ` +
+            `found across ${references.length} field path(s). Pass confirm=true to delete anyway.`,
+          totalReferences,
+          references,
+        })
       }
 
       try {
@@ -165,32 +159,19 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
           user: req.user,
         })
 
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: true,
-                message:
-                  totalReferences > 0
-                    ? `Deleted ${collection}#${documentId} despite ${totalReferences} inbound reference(s) (confirm=true).`
-                    : `Deleted ${collection}#${documentId}. No inbound references were found.`,
-                totalReferences,
-                references,
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          success: true,
+          message:
+            totalReferences > 0
+              ? `Deleted ${collection}#${documentId} despite ${totalReferences} inbound reference(s) (confirm=true).`
+              : `Deleted ${collection}#${documentId}. No inbound references were found.`,
+          totalReferences,
+          references,
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error deleting ${collection}#${documentId}: ${message}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error deleting ${collection}#${documentId}: ${errorMessage(error)}`,
+        )
       }
     },
   }

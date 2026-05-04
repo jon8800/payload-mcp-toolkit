@@ -1,13 +1,20 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
+import {
+  errorMessage,
+  getDocDisplayName,
+  jsonResponse,
+  requireDraftCollection,
+  stampMcpContext,
+  textResponse,
+} from './_helpers'
 
 const DEFAULT_LIST_LIMIT = 10
 
 /**
- * Creates the listVersions MCP tool that returns recent saved versions of a draft document.
- *
- * Only works on collections in `draftCollections`. Returns id, _status, updatedAt, and a
- * compact display name per version so an LLM can pick one to restore.
+ * Lists recent saved versions of a draft document. Returns id, _status,
+ * updatedAt, and a compact display name per version so an LLM can pick one
+ * to restore.
  */
 export function createListVersionsTool(draftCollections: Set<string>) {
   return {
@@ -36,20 +43,10 @@ export function createListVersionsTool(draftCollections: Set<string>) {
     ) => {
       const { collection, documentId, limit = DEFAULT_LIST_LIMIT } = args
 
-      if (!draftCollections.has(collection)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `Error: Collection "${collection}" does not support versions. ` +
-                `Draft-enabled collections: ${[...draftCollections].join(', ') || 'none'}`,
-            },
-          ],
-        }
-      }
+      const guard = requireDraftCollection(collection, draftCollections, 'versions')
+      if (guard) return guard
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       try {
         const result = await req.payload.findVersions({
@@ -69,49 +66,30 @@ export function createListVersionsTool(draftCollections: Set<string>) {
             updatedAt: v.updatedAt,
             createdAt: v.createdAt,
             status: snapshot._status ?? 'unknown',
-            displayName:
-              snapshot.name ||
-              snapshot.title ||
-              snapshot.slug ||
-              `${collection}#${documentId}`,
+            displayName: getDocDisplayName(snapshot, `${collection}#${documentId}`),
             autosave: v.autosave === true,
           }
         })
 
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                collection,
-                documentId,
-                totalDocs: result.totalDocs,
-                returned: versions.length,
-                versions,
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          collection,
+          documentId,
+          totalDocs: result.totalDocs,
+          returned: versions.length,
+          versions,
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error listing versions for ${collection}#${documentId}: ${message}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error listing versions for ${collection}#${documentId}: ${errorMessage(error)}`,
+        )
       }
     },
   }
 }
 
 /**
- * Creates the restoreVersion MCP tool that rolls a document back to a saved version.
- *
- * Restoring a version creates a new version on top — the old current state is preserved
- * so the operation is itself reversible via another restore.
+ * Restoring a version creates a new version on top — the previous current
+ * state is preserved so the operation is itself reversible.
  */
 export function createRestoreVersionTool(draftCollections: Set<string>) {
   return {
@@ -138,20 +116,10 @@ export function createRestoreVersionTool(draftCollections: Set<string>) {
     ) => {
       const { collection, versionId } = args
 
-      if (!draftCollections.has(collection)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `Error: Collection "${collection}" does not support versions. ` +
-                `Draft-enabled collections: ${[...draftCollections].join(', ') || 'none'}`,
-            },
-          ],
-        }
-      }
+      const guard = requireDraftCollection(collection, draftCollections, 'versions')
+      if (guard) return guard
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       try {
         const restored = await req.payload.restoreVersion({
@@ -162,33 +130,18 @@ export function createRestoreVersionTool(draftCollections: Set<string>) {
           user: req.user,
         })
 
-        const displayName =
-          (restored as any).name ||
-          (restored as any).title ||
-          (restored as any).slug ||
-          (restored as any).id
+        const restoredId = String((restored as any).id)
+        const displayName = getDocDisplayName(restored, restoredId)
 
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `Restored ${collection} document "${displayName}" (ID: ${(restored as any).id}) ` +
-                `from version ${versionId}. The document is now in draft status — ` +
-                `use publishDraft to make the restored content live.`,
-            },
-          ],
-        }
+        return textResponse(
+          `Restored ${collection} document "${displayName}" (ID: ${restoredId}) ` +
+            `from version ${versionId}. The document is now in draft status — ` +
+            `use publishDraft to make the restored content live.`,
+        )
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error restoring ${collection} from version ${versionId}: ${message}`,
-            },
-          ],
-        }
+        return textResponse(
+          `Error restoring ${collection} from version ${versionId}: ${errorMessage(error)}`,
+        )
       }
     },
   }

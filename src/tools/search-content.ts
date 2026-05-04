@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { CollectionSchema } from '../types'
+import { jsonResponse, stampMcpContext } from './_helpers'
 
 const DEFAULT_LIMIT = 20
 const HARD_LIMIT = 100
@@ -96,93 +97,78 @@ export function createSearchContentTool(
         limit = DEFAULT_LIMIT,
       } = args
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       const cappedLimit = Math.min(Math.max(1, limit), HARD_LIMIT)
 
-      // Determine target collections.
-      // When the user filters by a specific draft status, only consider collections
-      // that actually support drafts — other collections are not "draft" or
-      // "published" in any meaningful sense and shouldn't pollute the results.
+      // When filtering by draft status, only collections that support drafts
+      // are meaningful — others can't be "draft" or "published".
       const isDraftStatusFilter = status === 'draft' || status === 'published'
-      const initialTargets = collection
-        ? collectionSchemas.has(collection)
-          ? [collection]
-          : []
-        : allSlugs
+
+      let initialTargets: string[]
+      if (!collection) {
+        initialTargets = allSlugs
+      } else if (collectionSchemas.has(collection)) {
+        initialTargets = [collection]
+      } else {
+        initialTargets = []
+      }
 
       const targets = isDraftStatusFilter
         ? initialTargets.filter((slug) => collectionSchemas.get(slug)?.hasDrafts)
         : initialTargets
 
       if (targets.length === 0) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                hits: {},
-                message: collection
-                  ? `Unknown collection "${collection}". Available: ${allSlugs.join(', ')}`
-                  : 'No searchable collections found.',
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          hits: {},
+          message: collection
+            ? `Unknown collection "${collection}". Available: ${allSlugs.join(', ')}`
+            : 'No searchable collections found.',
+        })
       }
 
-      const grouped: Record<string, SearchHit[]> = {}
-      const stats: Record<string, { totalDocs: number; returned: number }> = {}
-
-      for (const slug of targets) {
-        const schema = collectionSchemas.get(slug)!
-        const where = buildWhereClause(schema, {
-          query,
-          status,
-          olderThanDays,
-          newerThanDays,
-          missingFields,
-        })
-
-        try {
-          const result = await req.payload.find({
+      const settled = await Promise.allSettled(
+        targets.map((slug) => {
+          const schema = collectionSchemas.get(slug)!
+          const where = buildWhereClause(schema, {
+            query,
+            status,
+            olderThanDays,
+            newerThanDays,
+            missingFields,
+          })
+          return req.payload.find({
             collection: slug as any,
             where: where as any,
             limit: cappedLimit,
             sort: '-updatedAt',
             depth: 0,
-            // Include drafts so status='draft' actually works and so missingFields
-            // queries against draft-only collections aren't misleadingly empty.
+            // Include drafts so status='draft' works and missingFields queries
+            // against draft-only collections aren't misleadingly empty.
             draft: schema.hasDrafts,
             req,
             overrideAccess: false,
             user: req.user,
           })
+        }),
+      )
 
-          if (result.totalDocs > 0) {
-            stats[slug] = { totalDocs: result.totalDocs, returned: result.docs.length }
-            grouped[slug] = result.docs.map((doc: any) => buildHit(doc, missingFields))
-          }
-        } catch {
-          // Skip collections that fail (permissions, missing fields, etc.) — return what we can
-          continue
+      const grouped: Record<string, SearchHit[]> = {}
+      const stats: Record<string, { totalDocs: number; returned: number }> = {}
+
+      settled.forEach((outcome, i) => {
+        if (outcome.status !== 'fulfilled') return
+        const slug = targets[i]
+        const result = outcome.value
+        if (result.totalDocs > 0) {
+          stats[slug] = { totalDocs: result.totalDocs, returned: result.docs.length }
+          grouped[slug] = result.docs.map((doc: any) => buildHit(doc, missingFields))
         }
-      }
+      })
 
       const totalHits = Object.values(grouped).reduce((sum, hits) => sum + hits.length, 0)
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              totalHits,
-              stats,
-              hits: grouped,
-            }),
-          },
-        ],
-      }
+      return jsonResponse({ totalHits, stats, hits: grouped })
     },
   }
 }
@@ -232,7 +218,6 @@ interface FilterArgs {
 function buildWhereClause(schema: CollectionSchema, filters: FilterArgs): Record<string, unknown> {
   const and: Array<Record<string, unknown>> = []
 
-  // Free-text query against searchable fields
   if (filters.query && schema.searchableFields.length > 0) {
     const or = schema.searchableFields.map((field) => ({
       [field]: { like: filters.query },
@@ -240,12 +225,11 @@ function buildWhereClause(schema: CollectionSchema, filters: FilterArgs): Record
     and.push({ or })
   }
 
-  // Status filter (only meaningful on draft-enabled collections)
+  // Status filter is only meaningful on draft-enabled collections
   if (filters.status && filters.status !== 'any' && schema.hasDrafts) {
     and.push({ _status: { equals: filters.status } })
   }
 
-  // Age filters
   if (filters.olderThanDays !== undefined) {
     const cutoff = new Date(Date.now() - filters.olderThanDays * 24 * 60 * 60 * 1000)
     and.push({ updatedAt: { less_than: cutoff.toISOString() } })

@@ -1,4 +1,5 @@
 import type { CollectionConfig, PayloadRequest } from 'payload'
+import { hasCollectionDrafts } from './introspection'
 
 /** MCP response shape used by overrideResponse */
 interface McpResponse {
@@ -49,13 +50,7 @@ export function getDraftBehavior(
   collection: CollectionConfig,
   options?: { draftBehavior?: Record<string, 'always-draft' | 'always-publish'> },
 ): 'always-draft' | 'always-publish' | 'publish' {
-  const hasDrafts =
-    typeof collection.versions === 'object' &&
-    collection.versions !== null &&
-    'drafts' in collection.versions &&
-    Boolean(collection.versions.drafts)
-
-  if (!hasDrafts) return 'publish'
+  if (!hasCollectionDrafts(collection)) return 'publish'
 
   const override = options?.draftBehavior?.[collection.slug]
   if (override) return override

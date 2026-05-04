@@ -1,11 +1,17 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { BlockCatalog, BlockNestingMap } from '../types'
+import {
+  DRAFT_NOTE,
+  errorMessage,
+  getDocDisplayName,
+  jsonResponse,
+  stampMcpContext,
+} from './_helpers'
 
 /**
- * Creates the patchLayout MCP tool — a surgical wrapper that mutates a single
- * document's blocks-typed field directly without round-tripping the entire
- * array through `updateDocument`.
+ * patchLayout — surgical wrapper that mutates a single document's blocks-typed
+ * field directly without round-tripping the entire array through updateDocument.
  *
  * Why this exists: prompting an LLM to "add a CTA at the bottom of the home
  * page" via updateDocument forces it to send the whole layout array, which one
@@ -22,10 +28,9 @@ export function createPatchLayoutTool(
   nesting: BlockNestingMap,
   draftCollections: Set<string>,
 ) {
-  const allBlockSlugs = catalog.blocks.map((b) => b.slug)
+  const allBlockSlugs = new Set(catalog.blocks.map((b) => b.slug))
 
-  // Pre-build lookups keyed by `<owner>:<fieldPath>` for O(1) access during
-  // recursive validation.
+  // Lookups keyed by `<owner>:<fieldPath>` for O(1) access during recursive validation.
   const nestingByCollectionField = new Map<string, string[]>()
   const nestingByBlockField = new Map<string, string[]>()
   for (const edge of nesting) {
@@ -85,8 +90,6 @@ export function createPatchLayoutTool(
         insertIndex,
       } = args
 
-      // Validate the incoming blocks against the nesting map for the target
-      // field before touching the database.
       const rootKey = `${collection}:${layoutField}`
       const rootAllowed = nestingByCollectionField.get(rootKey)
       if (!rootAllowed) {
@@ -103,21 +106,21 @@ export function createPatchLayoutTool(
         return errorResponse('Block validation failed.', { errors })
       }
 
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       let existing: any
       try {
         existing = await req.payload.findByID({
           collection: collection as any,
           id: documentId,
+          depth: 0,
           draft: true,
           req,
           overrideAccess: false,
           user: req.user,
         })
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return errorResponse(`Error fetching ${collection}#${documentId}: ${message}`)
+        return errorResponse(`Error fetching ${collection}#${documentId}: ${errorMessage(error)}`)
       }
 
       const currentLayout = Array.isArray(existing?.[layoutField]) ? existing[layoutField] : []
@@ -136,49 +139,27 @@ export function createPatchLayoutTool(
           user: req.user,
         })
 
-        const displayName =
-          (updated as any).name ||
-          (updated as any).title ||
-          (updated as any).slug ||
-          documentId
+        const displayName = getDocDisplayName(updated, documentId)
+        const draftNote = isDraftCollection ? DRAFT_NOTE : ''
 
-        const draftNote = isDraftCollection
-          ? ' Document is in draft status — use publishDraft to make it live.'
-          : ''
-
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                success: true,
-                message:
-                  `Patched ${layoutField} on "${displayName}" (${collection}#${documentId}). ` +
-                  `Operation: ${operation}. Block count: ${finalLayout.length}.` +
-                  draftNote,
-                blockCount: finalLayout.length,
-                operation,
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          success: true,
+          message:
+            `Patched ${layoutField} on "${displayName}" (${collection}#${documentId}). ` +
+            `Operation: ${operation}. Block count: ${finalLayout.length}.` +
+            draftNote,
+          blockCount: finalLayout.length,
+          operation,
+        })
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return errorResponse(`Error patching ${collection}#${documentId}: ${message}`)
+        return errorResponse(`Error patching ${collection}#${documentId}: ${errorMessage(error)}`)
       }
     },
   }
 }
 
 function errorResponse(message: string, extra?: Record<string, unknown>) {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({ success: false, error: message, ...(extra ?? {}) }),
-      },
-    ],
-  }
+  return jsonResponse({ success: false, error: message, ...(extra ?? {}) })
 }
 
 /**
@@ -189,7 +170,7 @@ function validateBlockList(
   blocks: Array<Record<string, unknown>>,
   allowedSlugs: string[],
   pathLabel: string,
-  allBlockSlugs: string[],
+  allBlockSlugs: Set<string>,
   nestingByBlockField: Map<string, string[]>,
   errors: string[],
 ) {
@@ -208,8 +189,8 @@ function validateBlockList(
       continue
     }
 
-    if (!allBlockSlugs.includes(slug)) {
-      errors.push(`${here}: unknown blockType "${slug}". Known: ${allBlockSlugs.join(', ')}`)
+    if (!allBlockSlugs.has(slug)) {
+      errors.push(`${here}: unknown blockType "${slug}". Known: ${[...allBlockSlugs].join(', ')}`)
       continue
     }
 
@@ -220,9 +201,9 @@ function validateBlockList(
       continue
     }
 
-    // Recurse: any value on this block that is itself an array of objects with
-    // `blockType` is treated as a nested blocks field. Cross-check the field
-    // name against the nesting map so we know the allow list for the next level.
+    // Any value that is itself an array of objects with `blockType` is treated
+    // as a nested blocks field. The field name is cross-checked against the
+    // nesting map to find the next-level allow list.
     for (const [fieldName, value] of Object.entries(block)) {
       if (!Array.isArray(value)) continue
       if (value.length === 0) continue

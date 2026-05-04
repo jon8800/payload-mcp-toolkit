@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
+import { jsonResponse, stampMcpContext } from './_helpers'
 
 interface MatchCandidate {
   collection: string
@@ -9,12 +10,6 @@ interface MatchCandidate {
   matchType: 'exact-slug' | 'exact' | 'partial'
 }
 
-/**
- * Creates the resolveReference MCP tool that searches collections by
- * natural language terms and returns ranked document ID candidates.
- *
- * @param searchableCollections - Map of collection slug → searchable field names
- */
 export function createResolveReferenceTool(
   searchableCollections: Map<string, string[]>,
 ) {
@@ -32,7 +27,7 @@ export function createResolveReferenceTool(
         .describe('Optional collection slug to restrict search to a single collection'),
     }),
     handler: async (args: { query: string; collection?: string }, req: PayloadRequest) => {
-      req.context = { ...req.context, source: 'mcp' }
+      stampMcpContext(req)
 
       const { query, collection } = args
 
@@ -46,65 +41,55 @@ export function createResolveReferenceTool(
 
       if (collectionsToSearch.size === 0) {
         const available = Array.from(searchableCollections.keys()).join(', ')
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                candidates: [],
-                message: collection
-                  ? `Collection "${collection}" has no searchable fields or does not exist. Available searchable collections: ${available}`
-                  : 'No searchable collections found.',
-              }),
-            },
-          ],
-        }
+        return jsonResponse({
+          candidates: [],
+          message: collection
+            ? `Collection "${collection}" has no searchable fields or does not exist. Available searchable collections: ${available}`
+            : 'No searchable collections found.',
+        })
       }
 
-      const allCandidates: MatchCandidate[] = []
+      const targets = Array.from(collectionsToSearch.entries()).filter(
+        ([, fields]) => fields.length > 0,
+      )
 
-      for (const [slug, fields] of collectionsToSearch) {
-        const orConditions = fields.map((field) => ({
-          [field]: { like: query },
-        }))
-
-        if (orConditions.length === 0) continue
-
-        const selectFields: Record<string, true> = {}
-        for (const field of fields) {
-          selectFields[field] = true
-        }
-
-        try {
-          const result = await req.payload.find({
+      const settled = await Promise.allSettled(
+        targets.map(([slug, fields]) => {
+          const selectFields: Record<string, true> = {}
+          for (const field of fields) selectFields[field] = true
+          return req.payload.find({
             collection: slug as any,
-            where: { or: orConditions },
+            where: { or: fields.map((field) => ({ [field]: { like: query } })) },
             limit: 5,
             select: selectFields,
             req,
             overrideAccess: false,
             user: req.user,
           })
+        }),
+      )
 
-          for (const doc of result.docs) {
-            const candidates = rankDocument(doc, slug, fields, query)
-            allCandidates.push(...candidates)
-          }
-        } catch {
-          // Skip collections that fail (e.g. permission errors)
-          continue
+      const allCandidates: MatchCandidate[] = []
+      settled.forEach((outcome, i) => {
+        if (outcome.status !== 'fulfilled') return
+        const [slug, fields] = targets[i]
+        for (const doc of outcome.value.docs) {
+          allCandidates.push(...rankDocument(doc, slug, fields, query))
         }
-      }
-
-      // Sort: exact-slug > exact > partial
-      allCandidates.sort((a, b) => {
-        const order: Record<string, number> = {
-          'exact-slug': 0,
-          exact: 1,
-          partial: 2,
-        }
-        return order[a.matchType] - order[b.matchType]
       })
+
+      allCandidates.sort(
+        (a, b) => matchTypePriority(a.matchType) - matchTypePriority(b.matchType),
+      )
+
+      if (allCandidates.length === 0) {
+        const searched = Array.from(collectionsToSearch.keys()).join(', ')
+        const available = Array.from(searchableCollections.keys()).join(', ')
+        return jsonResponse({
+          candidates: {},
+          message: `No results found for "${query}" in: ${searched}. Try a different spelling or search term. All searchable collections: ${available}`,
+        })
+      }
 
       const grouped: Record<string, Omit<MatchCandidate, 'collection'>[]> = {}
       for (const candidate of allCandidates) {
@@ -113,33 +98,10 @@ export function createResolveReferenceTool(
         grouped[col].push(rest)
       }
 
-      if (allCandidates.length === 0) {
-        const searched = Array.from(collectionsToSearch.keys()).join(', ')
-        const available = Array.from(searchableCollections.keys()).join(', ')
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                candidates: {},
-                message: `No results found for "${query}" in: ${searched}. Try a different spelling or search term. All searchable collections: ${available}`,
-              }),
-            },
-          ],
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({
-              candidates: grouped,
-              total: allCandidates.length,
-            }),
-          },
-        ],
-      }
+      return jsonResponse({
+        candidates: grouped,
+        total: allCandidates.length,
+      })
     },
   }
 }

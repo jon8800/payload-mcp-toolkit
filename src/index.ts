@@ -40,22 +40,19 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const collections = (incomingConfig.collections ?? []) as CollectionConfig[]
     const allBlocks = (incomingConfig.blocks ?? []) as Block[]
 
-    // 1. Schema introspection
     const collectionSchemas = introspectCollections(collections)
     const blockCatalog = introspectBlocks(allBlocks)
     const blockNesting = buildBlockNestingMap(collections, allBlocks)
     const relationships = buildRelationshipGraph(collectionSchemas)
 
-    // 2. Resolve preview siteUrl from explicit option, then Payload's own
-    //    serverURL, then conventional env vars. May still be undefined —
-    //    that's fine; relative-path preview URLs are skipped in that case.
+    // Preview siteUrl resolves: explicit option → Payload serverURL → env vars.
+    // May be undefined; relative-path preview URLs are skipped in that case.
     const previewSiteUrl =
       options.preview?.siteUrl ??
       incomingConfig.serverURL ??
       process.env.NEXT_PUBLIC_SERVER_URL ??
       process.env.SITE_URL
 
-    // 3. Generate prompts and resources
     const prompts = generatePrompts(
       collectionSchemas,
       blockCatalog,
@@ -70,7 +67,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       relationships,
     )
 
-    // 4. Build MCP collection configs (preview URL + draft behavior)
     const { mcpCollections, draftCollections } = generateMcpCollectionConfigs(collections, {
       siteUrl: previewSiteUrl,
       draftBehavior: options.draftBehavior,
@@ -78,7 +74,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       previewDisabled: options.preview?.disabled,
     })
 
-    // 5. Build the searchable-fields map for resolveReference
     const searchableCollections = new Map<string, string[]>()
     for (const [slug, schema] of collectionSchemas) {
       if (schema.searchableFields.length > 0) {
@@ -86,7 +81,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       }
     }
 
-    // 6. Tools
     const tools: any[] = [
       createPatchLayoutTool(blockCatalog, blockNesting, draftCollections),
       createPublishDraftTool(draftCollections),
@@ -105,7 +99,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const schedulePublish = createSchedulePublishTool(collectionSchemas, draftCollections)
     if (schedulePublish) tools.push(schedulePublish)
 
-    // 7. Globals — expose every non-excluded global with default capabilities
     const mcpGlobals: Record<string, { enabled: boolean; description?: string }> = {}
     const excludeGlobalSlugs = new Set(options.exclude?.globals ?? [])
     for (const global of (incomingConfig.globals ?? []) as Array<{ slug: string }>) {
@@ -116,16 +109,10 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       }
     }
 
-    // 8. Apply the official MCP plugin with our generated config.
-    //
-    // userCollection: passthrough — when omitted, the official plugin falls
-    // back to `incomingConfig.admin.user`, which is already the canonical
-    // Payload way to declare your auth collection.
-    //
-    // overrideAuth: rebinds req.user from the API key's linked user so our
-    // custom tools' overrideAccess: false runs against the right identity.
-    // Safe — getDefault() throws inside the official plugin if the API key
-    // has no linked user, so settings.user is guaranteed here.
+    // overrideAuth rebinds req.user from the API key's linked user so our
+    // custom tools' `overrideAccess: false` checks run against the right
+    // identity. userCollection passthrough lets the official plugin fall
+    // back to `incomingConfig.admin.user`.
     const withMcp = mcpPlugin({
       collections: mcpCollections as any,
       globals: mcpGlobals as any,

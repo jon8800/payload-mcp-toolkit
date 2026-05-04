@@ -9,6 +9,19 @@ import type {
 } from './types'
 
 /**
+ * True if the collection has Payload drafts enabled in its versions config.
+ */
+export function hasCollectionDrafts(collection: CollectionConfig): boolean {
+  const versions = collection.versions
+  return (
+    typeof versions === 'object' &&
+    versions !== null &&
+    'drafts' in versions &&
+    Boolean(versions.drafts)
+  )
+}
+
+/**
  * Introspect a Payload collection config into structured metadata.
  */
 export function introspectCollection(collection: CollectionConfig): CollectionSchema {
@@ -18,12 +31,6 @@ export function introspectCollection(collection: CollectionConfig): CollectionSc
     .filter((f) => ['text', 'email'].includes(f.type) && ['name', 'title', 'slug'].includes(f.name))
     .map((f) => f.name)
 
-  const hasDrafts = !!(
-    collection.versions &&
-    typeof collection.versions === 'object' &&
-    'drafts' in collection.versions &&
-    collection.versions.drafts
-  )
   const hasLivePreview = !!(
     collection.admin &&
     typeof collection.admin === 'object' &&
@@ -34,7 +41,7 @@ export function introspectCollection(collection: CollectionConfig): CollectionSc
   return {
     slug: collection.slug,
     fields,
-    hasDrafts,
+    hasDrafts: hasCollectionDrafts(collection),
     hasLivePreview,
     relationships,
     searchableFields,
