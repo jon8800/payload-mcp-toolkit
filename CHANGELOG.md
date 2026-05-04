@@ -4,6 +4,28 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-05-04
+
+### Fixed
+- The official plugin's per-collection raw `update<Resource>` tool is now
+  disabled for every collection, not only `always-draft` ones. Previously,
+  non-draftable collections containing `richText`, `upload`, or `blocks`
+  fields crashed at registration time with
+  `TypeError: convertedFields.partial is not a function` — the result of the
+  upstream schema converter falling back to `z.record()` (which has no
+  `.partial()`) when `json-schema-to-zod` chokes on those field types. The
+  toolkit's `updateDocument` and `patchLayout` already cover updates via the
+  local API for both draft and non-draft collections, so the broken raw tool
+  is fully redundant.
+
+### Changed
+- `draftBehavior: 'always-publish'` no longer re-enables the official raw
+  `update<Resource>` tool on a draftable collection. It still controls
+  whether updates are saved as drafts vs. published immediately — but the
+  update itself flows through `updateDocument`. Existing users who
+  specifically depended on the raw tool for non-draft collections will need
+  to switch to `updateDocument`.
+
 ## [0.3.0] - 2026-05-03
 
 Major simplification pass. The plugin now works with zero config in the

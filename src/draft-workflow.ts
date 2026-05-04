@@ -155,10 +155,11 @@ function createOverrideResponse(
  * Generates the mcpCollections config object for the official mcpPlugin.
  *
  * For each non-excluded collection:
- * - Determines enabled CRUD operations based on draft behavior
- * - For 'always-draft' collections: disables raw `update` to force clients
- *   through publishDraft / patchLayout / updateDocument (which preserve
- *   draft semantics)
+ * - Enables `find` / `create` / `delete`; disables the official plugin's
+ *   raw `update<Resource>` tool universally. The toolkit's `updateDocument`
+ *   and `patchLayout` cover updates via the local API (and survive the
+ *   upload-field / schema-conversion bugs in the official plugin's update
+ *   path). Draft semantics are preserved by `publishDraft`.
  * - For draft collections: attaches an `overrideResponse` that appends a
  *   preview URL — sourced from the collection's own livePreview/preview
  *   function — to draft documents. Falls back to a generic admin-panel
@@ -193,10 +194,17 @@ export function generateMcpCollectionConfigs(
       draftCollections.add(collection.slug)
     }
 
+    // Always disable the official plugin's per-collection `update<Resource>` tool.
+    // It calls `convertCollectionSchemaToZod` and crashes on any collection
+    // whose JSON schema can't be losslessly converted (richText, upload,
+    // blocks fields → fallback returns `z.record()`, then `.partial()` throws).
+    // The toolkit's `updateDocument` and `patchLayout` cover updates via the
+    // local API and survive the upload-field / schema-conversion bugs, so the
+    // raw update tool is redundant. See README "What it adds → updateDocument".
     const enabled = {
       find: true,
       create: true,
-      update: behavior !== 'always-draft',
+      update: false,
       delete: true,
     }
 

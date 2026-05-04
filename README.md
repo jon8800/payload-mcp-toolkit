@@ -42,7 +42,7 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 - `safeDelete` — relationship-aware delete. Walks the relationship graph, refuses with a structured impact summary if other documents reference the target. Fail-closed on permission errors. Override with `confirm: true`.
 
 **Draft workflow** wired into the official plugin's `mcpCollections`:
-- For collections with `versions.drafts` enabled, disables raw `update` so clients go through `publishDraft` / `patchLayout` / `updateDocument` (all of which preserve draft semantics).
+- The official plugin's per-collection raw `update<Resource>` tool is disabled for every collection. Updates flow through `updateDocument` / `patchLayout` (local-API based), which preserve draft semantics for draftable collections and survive the upload-field / schema-conversion bugs in the official plugin's update path.
 - Appends preview URLs to draft responses by calling each collection's own `admin.livePreview.url` or `admin.preview` function — no separate path config needed.
 
 ## Install
@@ -68,7 +68,7 @@ export default buildConfig({
 ```
 
 That's it. The toolkit infers everything from your Payload config:
-- **Draft behavior** — collections with `versions.drafts` get `always-draft` (raw update locked); others publish immediately.
+- **Draft behavior** — collections with `versions.drafts` get `always-draft` semantics (clients flow through `publishDraft` / `patchLayout` / `updateDocument`); others publish immediately. The official plugin's raw `update<Resource>` tool is disabled across the board — `updateDocument` replaces it.
 - **Preview URLs** — pulled from each collection's `admin.livePreview.url` (or `admin.preview` as a fallback). If neither is set, draft responses just get a generic admin-panel hint.
 - **Block nesting** — for every blocks-typed field, anywhere in the schema, the toolkit records which slugs are allowed. The AI composes layouts at any depth from that map.
 - **Auth collection** — comes from `admin.user` (the standard Payload setting). The official plugin handles this directly.
@@ -84,7 +84,7 @@ contentToolkitPlugin({
     disabled: false,                        // set true to suppress preview URLs entirely
   },
   draftBehavior: {
-    posts: 'always-publish',  // allow raw update on a draftable collection
+    posts: 'always-publish',  // publish immediately on update instead of saving a draft
   },
   userCollection: 'admins',  // override admin.user
   exclude: {
