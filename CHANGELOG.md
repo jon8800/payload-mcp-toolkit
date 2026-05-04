@@ -4,6 +4,25 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.4] - 2026-05-04
+
+### Added
+- `createDocument` tool — local-API based creation for any collection.
+  Mirrors `updateDocument`: pass `collection` + `data` (JSON string) and
+  optionally `draft`. Defaults to `draft: true` for draft-enabled
+  collections so newly created docs land in the same draft-first workflow
+  as updates.
+
+### Fixed
+- Disabled the official plugin's `create<Resource>` tool universally for
+  the same reason update was disabled in 0.3.2: the upstream schema
+  converter falls back to `z.record()` for any collection containing
+  richText, upload, blocks, or relationship-array fields. The fallback
+  registers a metadata-only input schema, and the MCP SDK strips every
+  content field before it reaches `payload.create()` — so creates always
+  failed required-field validation with empty data. `createDocument`
+  bypasses the converter entirely.
+
 ## [0.3.3] - 2026-05-04
 
 ### Fixed

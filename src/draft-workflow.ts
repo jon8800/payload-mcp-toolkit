@@ -155,11 +155,12 @@ function createOverrideResponse(
  * Generates the mcpCollections config object for the official mcpPlugin.
  *
  * For each non-excluded collection:
- * - Enables `find` / `create` / `delete`; disables the official plugin's
- *   raw `update<Resource>` tool universally. The toolkit's `updateDocument`
- *   and `patchLayout` cover updates via the local API (and survive the
- *   upload-field / schema-conversion bugs in the official plugin's update
- *   path). Draft semantics are preserved by `publishDraft`.
+ * - Enables `find` / `delete`; disables the official plugin's raw
+ *   `create<Resource>` and `update<Resource>` tools universally. Both
+ *   crash or silently drop fields on collections whose schemas contain
+ *   richText, upload, blocks, or relationship-array fields. The toolkit's
+ *   `createDocument` / `updateDocument` / `patchLayout` cover both ops via
+ *   the local API. Draft semantics are preserved by `publishDraft`.
  * - For draft collections: attaches an `overrideResponse` that appends a
  *   preview URL — sourced from the collection's own livePreview/preview
  *   function — to draft documents. Falls back to a generic admin-panel
@@ -194,16 +195,20 @@ export function generateMcpCollectionConfigs(
       draftCollections.add(collection.slug)
     }
 
-    // Always disable the official plugin's per-collection `update<Resource>` tool.
-    // It calls `convertCollectionSchemaToZod` and crashes on any collection
-    // whose JSON schema can't be losslessly converted (richText, upload,
-    // blocks fields → fallback returns `z.record()`, then `.partial()` throws).
-    // The toolkit's `updateDocument` and `patchLayout` cover updates via the
-    // local API and survive the upload-field / schema-conversion bugs, so the
-    // raw update tool is redundant. See README "What it adds → updateDocument".
+    // Disable the official plugin's per-collection `create<Resource>` and
+    // `update<Resource>` tools. Both call `convertCollectionSchemaToZod` and
+    // produce broken input schemas on any collection whose JSON schema can't
+    // be losslessly converted (richText, upload, blocks, relationship-array
+    // fields → fallback returns `z.record()`):
+    //   - update<Resource>: throws `convertedFields.partial is not a function`
+    //   - create<Resource>: registers with metadata-only params, then the MCP
+    //     SDK strips every content field before it reaches `payload.create()`,
+    //     so creates fail required-field validation with empty data.
+    // The toolkit's `createDocument` / `updateDocument` / `patchLayout` cover
+    // both ops via the local API and survive these upstream bugs.
     const enabled = {
       find: true,
-      create: true,
+      create: false,
       update: false,
       delete: true,
     }

@@ -10,6 +10,7 @@ import {
 import { generatePrompts } from './prompts'
 import { generateResources } from './resources'
 import { generateMcpCollectionConfigs } from './draft-workflow'
+import { createCreateDocumentTool } from './tools/create-document'
 import { createPatchLayoutTool } from './tools/patch-layout'
 import { createPublishDraftTool } from './tools/publish-draft'
 import { createResolveReferenceTool } from './tools/resolve-reference'
@@ -82,6 +83,7 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     }
 
     const tools: any[] = [
+      createCreateDocumentTool(collectionSchemas, draftCollections),
       createPatchLayoutTool(blockCatalog, blockNesting, draftCollections),
       createPublishDraftTool(draftCollections),
       createResolveReferenceTool(searchableCollections),

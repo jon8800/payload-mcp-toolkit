@@ -23,11 +23,12 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 **Auto-generated resources** (machine-readable JSON for the LLM):
 - `blocks://catalog`, `collections://schema`, `collections://relationships`.
 
-**Custom tools (10, plus an auto-registered scheduler)**
+**Custom tools (11, plus an auto-registered scheduler)**
 
 *Authoring*
+- `createDocument` — local-API based creation for any collection. Pass `data` as a JSON string. Defaults to `draft: true` on draft-enabled collections. Replaces the official plugin's per-collection `create<Resource>` tools, which silently drop every content field on collections with richText/upload/blocks/relationship-array fields.
 - `patchLayout` — surgical append/prepend/insertAt/replaceAt against any blocks-typed field. Validates each block (recursively, at any depth) against the introspected nesting map. Safer than `updateDocument` for incremental layout edits.
-- `updateDocument` — Local-API based update that survives the upload-field bug in the official plugin.
+- `updateDocument` — local-API based update for any collection. Replaces the official plugin's per-collection `update<Resource>` tools, which crash on collections with richText/upload/blocks fields.
 - `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe with streaming size cap), create a Media doc.
 
 *Discovery*
@@ -42,7 +43,7 @@ The official Payload MCP plugin gives every collection a generic CRUD surface. T
 - `safeDelete` — relationship-aware delete. Walks the relationship graph, refuses with a structured impact summary if other documents reference the target. Fail-closed on permission errors. Override with `confirm: true`.
 
 **Draft workflow** wired into the official plugin's `mcpCollections`:
-- The official plugin's per-collection raw `update<Resource>` tool is disabled for every collection. Updates flow through `updateDocument` / `patchLayout` (local-API based), which preserve draft semantics for draftable collections and survive the upload-field / schema-conversion bugs in the official plugin's update path.
+- The official plugin's per-collection raw `create<Resource>` and `update<Resource>` tools are disabled for every collection. Authoring flows through `createDocument` / `updateDocument` / `patchLayout` (all local-API based), which preserve draft semantics for draftable collections and survive the schema-conversion bugs in the official plugin's authoring path.
 - Appends preview URLs to draft responses by calling each collection's own `admin.livePreview.url` or `admin.preview` function — no separate path config needed.
 
 ## Install
