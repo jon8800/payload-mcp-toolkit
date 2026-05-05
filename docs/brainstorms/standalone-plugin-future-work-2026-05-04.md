@@ -65,3 +65,7 @@ Prerequisite: v0.4 ships and has been live long enough to gather signal on which
 The risk these items pose to the standalone migration is anchoring: once the v0.4 spike succeeds, a parking lot of well-articulated next steps becomes the natural Day-2 milestone, and the 1–2 day standalone scope stretches into a 3–4 week capability expansion. Keeping them in a separate document — with explicit cost estimates and prerequisites — makes the trade-off visible at the decision point.
 
 The fork is **lateral motion** (same capabilities, different ownership boundary). These items are **moat-deepening** (capabilities the wrapper architecture can't easily express). The order matters: ship the lateral move, stabilize, *then* deepen — don't bundle them.
+
+## Post-implementation learnings (added after v0.4 ship)
+
+When the admin-panel future work picks up the scoped-authz model, inherit the corrected fail-closed semantics from [docs/solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md](../solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md). The v0.4 ship also confirmed that `auth.strategies` alone is not sufficient to gate custom endpoints — any future endpoint added by the admin panel (e.g. an SSE channel, a key-scope preview API) must explicitly check `getApiKeyContext(req)` before doing work.

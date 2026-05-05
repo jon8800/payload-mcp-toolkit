@@ -650,3 +650,9 @@ The v0.4 plan accepts this trade because the alternative — typed inputSchema p
 - External: https://payloadcms.com/docs/authentication/custom-strategies — Payload auth strategies
 - External: https://payloadcms.com/docs/rest-api/overview — Payload custom endpoints
 - External: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html — OWASP guidance on high-entropy tokens vs passwords
+
+---
+
+## Post-Implementation Learnings
+
+- [docs/solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md](../solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md) — Codex review of v0.4.0 surfaced two auth holes that this plan's R3 ("auth via `auth.strategies`") and scopes-JSON description did not anticipate: Payload's `auth.strategies` hydrate `req.user` but do not refuse unauthenticated requests at custom endpoints, and `scopes.collections` was implemented with fallthrough rather than whitelist semantics. Both fixed in commit `2e848ab`. Future plans in this area should treat `auth.strategies` as necessary but not sufficient and require fail-closed semantics on every scope branch.

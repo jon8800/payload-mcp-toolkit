@@ -167,3 +167,7 @@ These are the places where this could turn into more than a 1–2 day job, or wh
 ## Future work
 
 Items considered but explicitly out of scope for the standalone v0.4 release have been moved to a separate doc with cost estimates: see `docs/brainstorms/standalone-plugin-future-work-2026-05-04.md`.
+
+## Post-implementation learnings
+
+- [docs/solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md](../solutions/security-issues/mcp-auth-bypass-and-scope-fail-open-2026-05-05.md) — the scoped-authz model sketched in B-2 above shipped fail-open in v0.4.0 (custom endpoint did not gate on missing API-key context; `scopes.collections` fell through rather than whitelisting). Both issues fixed before release; the learning captures the corrected pattern.
