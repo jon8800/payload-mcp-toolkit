@@ -4,6 +4,60 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-05-05
+
+### Added
+- **Standalone plugin.** The toolkit now owns the `/api/mcp` endpoint, the
+  `payload-mcp-api-keys` collection, and bearer authentication via Payload's
+  native `auth.strategies` extension point. `@payloadcms/plugin-mcp` is no
+  longer a dependency or peer dependency.
+- **Scoped per-key authorization.** New `scopes` JSON field on API-key rows
+  with three role presets (`read-only`, `editor`, `admin`), per-collection
+  action overrides, and per-tool allow/deny lists. Tool-call dispatch
+  enforces the resolved scopes and returns spec-compliant `isError: true`
+  results on rejection (no JSON-RPC error codes, so the LLM can self-correct).
+- **Lifecycle fields** on the API-keys collection: `name`, `description`,
+  `expiresAt`, `revokedAt`, `lastUsedAt`, `keyPrefix`. `lastUsedAt` is
+  written fire-and-forget; the request hot path is never blocked on the write.
+- **`findDocument`** — polymorphic find tool keyed by `collection` arg.
+  Mirrors `createDocument` / `updateDocument` shape. Decorates draft
+  documents with preview URLs.
+- **`deleteDocument`** — fast unsafe delete for surgical use; `safeDelete`
+  remains the recommended default.
+- **Plugin-conflict detection.** Boot fails fast with an actionable upgrade
+  message if `@payloadcms/plugin-mcp` is also registered, or if another
+  collection has taken the api-keys slug.
+- **Origin / Host validation** on `/api/mcp` POST mitigates DNS-rebinding
+  attacks against local Payload instances. CORS defaults to no-browsers
+  (server-to-server only); explicit opt-in via `auth.allowedOrigins`.
+- **Audit logging** on every tool call: structured `req.payload.logger`
+  entry with `keyId`, `keyPrefix`, `tool`, `collectionArg`, `dataKeys`
+  (top-level keys only — never values), `success`, `isError`, `durationMs`,
+  `requestId`, `errorClass`. Long string args are summarised as
+  `<truncated:N>` to keep logs bounded.
+
+### Changed
+- The bearer auth strategy reuses Payload's built-in `useAPIKey: true`
+  columns and HMAC formula so existing v0.3.x API-key rows authenticate
+  without re-issue.
+- v0.3.x's dynamic `mcpAccessSettings` field tree is replaced by the new
+  `scopes` JSON column. The first authenticated request from each existing
+  key lazily translates its old per-collection / per-tool flags and persists
+  the result. The legacy column is retained (hidden) for one release; it
+  will be dropped in v0.5.
+- `draft-workflow.ts` slimmed to `getDraftBehavior` + `computeDraftCollections`.
+  The plugin no longer produces an upstream `mcpCollections` config object.
+
+### Removed
+- `@payloadcms/plugin-mcp` peer dependency.
+- `generateMcpCollectionConfigs` / `createOverrideResponse` /
+  `resolvePreviewUrl` from `draft-workflow.ts`. Preview decoration now lives
+  in `tools/_helpers.ts` as `decorateDraftResponse` + `resolvePreviewUrl`,
+  reusable across find/create/update tools.
+
+### Migration
+See [README → Upgrading from 0.3.x](./README.md#upgrading-from-03x).
+
 ## [0.3.4] - 2026-05-04
 
 ### Added

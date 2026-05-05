@@ -1,60 +1,20 @@
 # payload-mcp-toolkit
 
-> Schema-aware MCP toolkit for Payload CMS — wraps the official [`@payloadcms/plugin-mcp`](https://github.com/payloadcms/payload/tree/main/packages/plugin-mcp) with introspected prompts, resources, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.
+> Standalone schema-aware MCP plugin for Payload CMS v3. Owns the `/api/mcp` endpoint, scoped API keys, draft workflow, and AI-friendly authoring tools so non-technical editors can manage content via AI chat.
 
-## What it does
+`payload-mcp-toolkit` is a single, self-contained Payload v3 plugin. It introspects your Payload config at boot, registers schema-aware **prompts**, **resources**, and **tools** for any MCP-compatible client (Claude Desktop, Claude API, Continue, Cline), and exposes them over `POST /api/mcp` with bearer-token authentication on a built-in API-keys collection.
 
-The official Payload MCP plugin gives every collection a generic CRUD surface. That works, but an LLM driving it has no idea:
-
-- which collections support drafts vs publish-immediately,
-- which block types are valid inside which sections,
-- which fields are searchable for resolving relationships,
-- how to compose a page layout without trial and error.
-
-`payload-mcp-toolkit` introspects the Payload config at boot, then layers schema-aware **prompts**, **resources**, and **tools** on top of the official plugin so an AI client (Claude Desktop, Claude API, any MCP-compatible chat) can drive your CMS confidently.
-
-## What it adds
-
-**Auto-generated prompts** (no setup required):
-- `contentModelOverview` — every collection, fields, and relationships.
-- `blockCompositionGuide` — section/leaf hierarchy and nesting rules.
-- `draftWorkflowGuide` — which collections need `publishDraft` to go live.
-
-**Auto-generated resources** (machine-readable JSON for the LLM):
-- `blocks://catalog`, `collections://schema`, `collections://relationships`.
-
-**Custom tools (11, plus an auto-registered scheduler)**
-
-*Authoring*
-- `createDocument` — local-API based creation for any collection. Pass `data` as a JSON string. Defaults to `draft: true` on draft-enabled collections. Replaces the official plugin's per-collection `create<Resource>` tools, which silently drop every content field on collections with richText/upload/blocks/relationship-array fields.
-- `patchLayout` — surgical append/prepend/insertAt/replaceAt against any blocks-typed field. Validates each block (recursively, at any depth) against the introspected nesting map. Safer than `updateDocument` for incremental layout edits.
-- `updateDocument` — local-API based update for any collection. Replaces the official plugin's per-collection `update<Resource>` tools, which crash on collections with richText/upload/blocks fields.
-- `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe with streaming size cap), create a Media doc.
-
-*Discovery*
-- `resolveReference` — search collections by name/title/slug for relationship IDs.
-- `searchContent` — natural-language editor triage. Filter by `status`, `olderThanDays` / `newerThanDays`, `missingFields`, free-text `query`, scoped to one collection or all.
-
-*Lifecycle / safety*
-- `publishDraft` — flip `_status` from draft to published.
-- `schedulePublish` — **bring your own scheduler.** Stamps a future `publishedAt` on a draft and leaves `_status: 'draft'`; it does **not** itself flip status at the appointed time. Auto-registered only for collections that have both drafts AND a `publishedAt` date field. Wire up a [Payload Jobs Queue task](https://payloadcms.com/docs/jobs-queue/scheduled-jobs), external cron, or `beforeRead` hook to actually publish on schedule.
-- `listVersions` — recent saved versions of a draft document.
-- `restoreVersion` — roll a document back to a saved version (creates a new version on top, so reversible).
-- `safeDelete` — relationship-aware delete. Walks the relationship graph, refuses with a structured impact summary if other documents reference the target. Fail-closed on permission errors. Override with `confirm: true`.
-
-**Draft workflow** wired into the official plugin's `mcpCollections`:
-- The official plugin's per-collection raw `create<Resource>` and `update<Resource>` tools are disabled for every collection. Authoring flows through `createDocument` / `updateDocument` / `patchLayout` (all local-API based), which preserve draft semantics for draftable collections and survive the schema-conversion bugs in the official plugin's authoring path.
-- Appends preview URLs to draft responses by calling each collection's own `admin.livePreview.url` or `admin.preview` function — no separate path config needed.
+It is the standalone successor to the toolkit's earlier wrapper around `@payloadcms/plugin-mcp` — see [Upgrading from 0.3.x](#upgrading-from-03x) below.
 
 ## Install
 
 ```bash
-pnpm add payload-mcp-toolkit @payloadcms/plugin-mcp
+pnpm add payload-mcp-toolkit
 ```
 
-Peer dependencies: `payload` ^3, `@payloadcms/plugin-mcp` ^3, `zod` ^3.
+Peer dependencies: `payload` ^3, `zod` ^3.
 
-## Use — zero config
+## Configure — zero config
 
 ```ts
 // payload.config.ts
@@ -62,17 +22,99 @@ import { contentToolkitPlugin } from 'payload-mcp-toolkit'
 
 export default buildConfig({
   // ...your collections, blocks, globals
-  serverURL: process.env.SITE_URL,                 // used for absolute preview URLs
-  admin: { user: 'users' },                        // your auth collection
+  serverURL: process.env.SITE_URL,        // used for absolute preview URLs + Host check
+  admin: { user: 'users' },               // your auth collection
   plugins: [contentToolkitPlugin()],
 })
 ```
 
-That's it. The toolkit infers everything from your Payload config:
-- **Draft behavior** — collections with `versions.drafts` get `always-draft` semantics (clients flow through `publishDraft` / `patchLayout` / `updateDocument`); others publish immediately. The official plugin's raw `update<Resource>` tool is disabled across the board — `updateDocument` replaces it.
-- **Preview URLs** — pulled from each collection's `admin.livePreview.url` (or `admin.preview` as a fallback). If neither is set, draft responses just get a generic admin-panel hint.
-- **Block nesting** — for every blocks-typed field, anywhere in the schema, the toolkit records which slugs are allowed. The AI composes layouts at any depth from that map.
-- **Auth collection** — comes from `admin.user` (the standard Payload setting). The official plugin handles this directly.
+That is the entire integration. The toolkit:
+
+- Adds the `payload-mcp-api-keys` collection (admin UI: **MCP → API Keys**).
+- Registers a bearer authentication strategy on your user collection.
+- Mounts `POST /api/mcp` and `GET /api/mcp` (the latter returns 405 with a JSON-RPC error so probing clients see something useful).
+- Builds tools / prompts / resources from your introspected schema.
+
+Everything else is inferred:
+
+- **Draft behavior** — collections with `versions.drafts` get `always-draft` semantics (clients flow through `publishDraft` / `patchLayout` / `updateDocument`); others publish immediately.
+- **Preview URLs** — pulled from each collection's `admin.livePreview.url` (or `admin.preview` as a fallback). Falls back to a generic admin-panel hint when neither is set.
+- **Block nesting** — recorded for every blocks-typed field anywhere in the schema; the AI composes layouts at any depth from that map.
+- **User collection** — `admin.user`.
+
+## API keys
+
+Create one in admin (**MCP → API Keys → Create**). The plaintext key is shown once on creation; from then on only its `keyPrefix` (first 8 chars) is visible.
+
+Authenticate every MCP request with:
+
+```http
+POST /api/mcp HTTP/1.1
+Authorization: Bearer <plaintext-key>
+Content-Type: application/json
+```
+
+### Scopes
+
+Each key carries an optional `scopes` JSON field that controls what tools and collections it can hit. Leave `scopes` unset for full access (back-compat).
+
+| Field | Shape | Effect |
+|---|---|---|
+| `preset` | `'read-only' \| 'editor' \| 'admin'` | Quick role. `read-only` allows `read`; `editor` allows `read+create+update` and denies `safeDelete`/`deleteDocument`; `admin` allows all actions. |
+| `collections` | `{ [slug]: ('read' \| 'create' \| 'update' \| 'delete')[] }` | Per-collection override. Replaces the preset's action set for that slug. |
+| `tools.allow` | `string[]` | Tools the key may call (whitelist). |
+| `tools.deny` | `string[]` | Tools the key may not call (blacklist). |
+
+Example scopes JSON:
+
+```json
+{
+  "preset": "editor",
+  "collections": { "posts": ["read", "update"] },
+  "tools": { "deny": ["uploadMedia"] }
+}
+```
+
+### Lifecycle fields
+
+| Field | Effect |
+|---|---|
+| `name`, `description` | Human-readable identifier in the admin list. |
+| `expiresAt` | Authentication rejects keys past this date. |
+| `revokedAt` | Authentication rejects keys when set. |
+| `lastUsedAt` | Updated fire-and-forget on each successful auth. |
+| `keyPrefix` | First 8 chars of the plaintext, for audit-log identification. |
+
+## What the plugin adds
+
+**Auto-generated prompts:**
+
+- `contentModelOverview` — every collection, fields, and relationships.
+- `blockCompositionGuide` — section/leaf hierarchy and nesting rules.
+- `draftWorkflowGuide` — which collections need `publishDraft` to go live.
+
+**Auto-generated resources:** `blocks://catalog`, `collections://schema`, `collections://relationships`.
+
+**Tools (13, plus an auto-registered scheduler):**
+
+*Authoring*
+- `createDocument` — local-API based creation for any collection. JSON-string `data`. Defaults to `draft: true` on draft-enabled collections.
+- `updateDocument` — local-API based update. Replaces the upstream plugin's `update<Resource>` tools, which crash on collections containing richText/upload/blocks fields.
+- `patchLayout` — surgical append/prepend/insertAt/replaceAt against any blocks-typed field. Validates each block recursively against the introspected nesting map.
+- `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe with a streaming size cap), create a Media doc.
+
+*Discovery*
+- `findDocument` — read documents by `id` or `where` filter, polymorphic across collections. Decorates draft responses with preview URLs when configured.
+- `resolveReference` — search collections by name/title/slug for relationship IDs.
+- `searchContent` — natural-language editor triage (status, recency, missing fields, free text).
+
+*Lifecycle / safety*
+- `publishDraft` — flip `_status` from draft to published.
+- `schedulePublish` — auto-registered for collections with drafts AND a `publishedAt` date field. Stamps a future `publishedAt`; you wire up the actual flip via Payload Jobs Queue / cron / `beforeRead`.
+- `listVersions` — recent saved versions of a draft document.
+- `restoreVersion` — roll a document back to a saved version (creates a new version, so reversible).
+- `safeDelete` — relationship-aware delete. Walks the relationship graph; refuses with a structured impact summary if the doc has inbound references. Override with `confirm: true`.
+- `deleteDocument` — fast unsafe delete (no relationship walk). Use only when you know the doc has no inbound references; prefer `safeDelete` for general use.
 
 ## Optional configuration
 
@@ -80,35 +122,37 @@ Every option is an escape hatch — pass only what you need:
 
 ```ts
 contentToolkitPlugin({
+  auth: {
+    allowedOrigins: ['https://app.example.com'],   // browser MCP clients only; defaults to no-CORS
+  },
+  apiKeyCollection: {
+    slug: 'mcp-keys',                              // default 'payload-mcp-api-keys'
+    userCollection: 'admins',                      // default admin.user
+  },
   preview: {
-    siteUrl: 'https://staging.example.com', // override serverURL
-    disabled: false,                        // set true to suppress preview URLs entirely
+    siteUrl: 'https://staging.example.com',
+    disabled: false,
   },
   draftBehavior: {
-    posts: 'always-publish',  // publish immediately on update instead of saving a draft
+    posts: 'always-publish',                       // publish immediately on update
   },
-  userCollection: 'admins',  // override admin.user
+  userCollection: 'admins',
   exclude: {
     collections: ['internal-bookkeeping'],
     globals: ['secret-config'],
   },
-  mediaUpload: {
-    maxFileSize: 25 * 1024 * 1024,
-    collectionSlug: 'images',
-  },
+  mediaUpload: { maxFileSize: 25 * 1024 * 1024, collectionSlug: 'images' },
   domainPrompts: [
-    {
-      name: 'siteVocabulary',
-      title: 'Site Vocabulary',
-      description: 'Site-specific terms the AI should know.',
-      content: '...',
-    },
+    { name: 'siteVocabulary', title: 'Site Vocabulary', description: 'Site-specific terms.', content: '...' },
   ],
 })
 ```
 
 | Option | Description |
 |---|---|
+| `auth.allowedOrigins` | Origins permitted on the `Origin` header. Empty / unset means server-to-server only (no browsers). `*` is intentionally not honoured. |
+| `apiKeyCollection.slug` | API-keys collection slug. Defaults to `payload-mcp-api-keys` for zero-touch upgrade compatibility. |
+| `apiKeyCollection.userCollection` | User collection that API keys link to. Defaults to `userCollection` / `admin.user`. |
 | `preview.siteUrl` | Base URL for preview links. Defaults to `serverURL`, then `NEXT_PUBLIC_SERVER_URL`/`SITE_URL` env vars. |
 | `preview.disabled` | Suppress preview URL injection on draft responses. |
 | `draftBehavior` | Per-collection override of inferred behavior. |
@@ -118,6 +162,27 @@ contentToolkitPlugin({
 | `mediaUpload.maxFileSize` | Default 10MB. Enforced as a streaming cap, not a post-buffer check. |
 | `mediaUpload.collectionSlug` | Default `'media'`. |
 
+## Upgrading from 0.3.x
+
+v0.3.x wrapped `@payloadcms/plugin-mcp`. v0.4 owns the small remaining surface (transport, auth, API-key collection, find/delete) directly. The migration is short.
+
+1. **Remove the upstream plugin** from `plugins[]`:
+   ```diff
+   - import { mcpPlugin } from '@payloadcms/plugin-mcp'
+   - // ...
+   - plugins: [contentToolkitPlugin(), mcpPlugin({ ... })],
+   + plugins: [contentToolkitPlugin()],
+   ```
+2. **Drop the dependency** from `package.json`:
+   ```bash
+   pnpm remove @payloadcms/plugin-mcp
+   ```
+3. **Existing API keys keep working zero-touch.** The `payload-mcp-api-keys` slug, `apiKey` / `apiKeyIndex` columns, and HMAC formula are all preserved. The first authenticated request from each existing key migrates its old `mcpAccessSettings` tree into the new `scopes` JSON column transparently.
+4. **New scopes shape** — see the [API keys](#api-keys) section. Existing keys get their per-collection `find`/`create`/`update`/`delete` flags translated to `read`/`create`/`update`/`delete` action arrays, and any enabled `payload-mcp-tool` checkboxes become `tools.allow`. Keys with no v0.3 access settings stay at full access.
+5. **CORS defaults to no-browsers.** If you have a browser-based MCP client, set `auth.allowedOrigins`. Server-to-server callers (no `Origin` header) are always allowed and require no opt-in.
+
+If you forget step 1, the plugin throws on boot with the same message — it refuses to register two MCP plugins racing for the `payload-mcp-api-keys` slug.
+
 ## Development
 
 This package follows the [official Payload 3 plugin template](https://github.com/payloadcms/payload/tree/main/templates/plugin) layout: source in `src/`, a fully-working Payload + Next.js app in `dev/`, source-export `package.json` so the dev harness consumes the plugin directly without a build step.
@@ -126,25 +191,17 @@ This package follows the [official Payload 3 plugin template](https://github.com
 pnpm install
 cp dev/.env.example dev/.env
 pnpm dev          # boot dev/ Next.js + Payload at http://localhost:3000
-pnpm test         # vitest — runs introspection unit tests
+pnpm test         # vitest — runs the unit + integration suite
 pnpm build        # produce dist/ for npm publish
 ```
 
 The dev harness ships with a realistic CMS schema:
+
 - `Pages` — block-based layout (FullWidth, TwoColumn, CtaBanner, HeadingOnly), drafts enabled.
 - `Posts` — title/slug/excerpt/content/cover/category/authors/tags/SEO, drafts enabled.
 - `Authors`, `Categories`, `Media`, `Users` — taxonomy + auth.
 - `SiteSettings` — global with site name, logo, social, footer.
 - 5 leaf blocks (Heading, RichText, Image, ButtonGroup, Quote) and 4 section blocks.
-
-Seed sample content:
-
-```bash
-# Generate the admin import map first time:
-pnpm dev:generate-importmap
-
-# Then visit http://localhost:3000/admin and create your first user.
-```
 
 ## License
 

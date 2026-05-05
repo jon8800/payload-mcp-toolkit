@@ -1,7 +1,7 @@
 ---
 title: "feat: Standalone Payload MCP plugin (v0.4)"
 type: feat
-status: active
+status: completed
 date: 2026-05-04
 origin: docs/brainstorms/standalone-plugin-2026-05-04.md
 ---
