@@ -33,9 +33,10 @@ beforeEach(() => {
 
 describe('createMcpEndpoints', () => {
   const initializeServer = vi.fn()
+  const buildInitializeServer = vi.fn(() => initializeServer)
 
   it('registers POST + GET endpoints at /mcp', () => {
-    const endpoints = createMcpEndpoints({ initializeServer })
+    const endpoints = createMcpEndpoints({ buildInitializeServer })
     expect(endpoints).toHaveLength(2)
     const methods = endpoints.map((e) => e.method).sort()
     expect(methods).toEqual(['get', 'post'])
@@ -43,7 +44,7 @@ describe('createMcpEndpoints', () => {
   })
 
   it('GET returns 405 with a JSON-RPC error body', async () => {
-    const [, getEndpoint] = createMcpEndpoints({ initializeServer })
+    const [, getEndpoint] = createMcpEndpoints({ buildInitializeServer })
     const res = await getEndpoint.handler(buildReq({ method: 'GET' }) as never)
     expect(res.status).toBe(405)
     const body = (await res.json()) as { jsonrpc: string; error: { message: string } }
@@ -53,7 +54,7 @@ describe('createMcpEndpoints', () => {
 
   it('POST with valid host + no origin delegates to mcp-handler', async () => {
     const [postEndpoint] = createMcpEndpoints({
-      initializeServer,
+      buildInitializeServer,
       serverURL: 'https://app.example.com',
     })
     const res = await postEndpoint.handler(
@@ -65,7 +66,7 @@ describe('createMcpEndpoints', () => {
 
   it('rejects POST with mismatched Host header (DNS rebinding mitigation)', async () => {
     const [postEndpoint] = createMcpEndpoints({
-      initializeServer,
+      buildInitializeServer,
       serverURL: 'https://app.example.com',
     })
     const res = await postEndpoint.handler(
@@ -78,7 +79,7 @@ describe('createMcpEndpoints', () => {
   })
 
   it('skips host validation when serverURL is not configured', async () => {
-    const [postEndpoint] = createMcpEndpoints({ initializeServer })
+    const [postEndpoint] = createMcpEndpoints({ buildInitializeServer })
     const res = await postEndpoint.handler(
       buildReq({ host: 'whatever.example.com' }) as never,
     )
@@ -87,7 +88,7 @@ describe('createMcpEndpoints', () => {
 
   it('rejects POST with disallowed Origin', async () => {
     const [postEndpoint] = createMcpEndpoints({
-      initializeServer,
+      buildInitializeServer,
       allowedOrigins: ['https://app.example.com'],
     })
     const res = await postEndpoint.handler(
@@ -100,13 +101,13 @@ describe('createMcpEndpoints', () => {
   })
 
   it('allows server-to-server POST (no Origin header) even when allowedOrigins is empty', async () => {
-    const [postEndpoint] = createMcpEndpoints({ initializeServer })
+    const [postEndpoint] = createMcpEndpoints({ buildInitializeServer })
     const res = await postEndpoint.handler(buildReq({}) as never)
     expect(res.status).toBe(200)
   })
 
   it('forwards a constructed Fetch Request to the mcp-handler', async () => {
-    const [postEndpoint] = createMcpEndpoints({ initializeServer })
+    const [postEndpoint] = createMcpEndpoints({ buildInitializeServer })
     await postEndpoint.handler(buildReq({}) as never)
     const [forwarded] = handlerMock.mock.calls[0]!
     expect(forwarded).toBeInstanceOf(Request)

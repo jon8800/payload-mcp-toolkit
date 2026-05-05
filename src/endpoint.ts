@@ -5,9 +5,17 @@ import { createMcpHandler } from 'mcp-handler'
 export const MCP_BASE_PATH = '/api/mcp'
 export const MCP_ENDPOINT_PATH = '/mcp'
 
+export type InitializeServerForRequest = (
+  req: PayloadRequest,
+) => (server: McpServer) => void | Promise<void>
+
 export interface CreateMcpEndpointsOptions {
-  /** Callback that registers tools/prompts/resources on a fresh McpServer per request. */
-  initializeServer: (server: McpServer) => void | Promise<void>
+  /**
+   * Per-request factory that returns the McpServer initializer. Called once
+   * per POST /api/mcp; the returned callback receives a fresh McpServer
+   * instance and registers tools/prompts/resources scoped to this request.
+   */
+  buildInitializeServer: InitializeServerForRequest
   /**
    * Origins permitted to send the `Origin` header. Server-to-server callers
    * (no Origin) are always allowed. An empty / unset list means "no browsers".
@@ -64,13 +72,7 @@ function isHostAllowed(host: string | null, serverURL: string | undefined): bool
  * minimally-shaped PayloadRequest.
  */
 export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint[] {
-  const { initializeServer, allowedOrigins, serverURL, verboseLogs = false } = options
-
-  const handler = createMcpHandler(initializeServer, undefined, {
-    basePath: MCP_BASE_PATH,
-    disableSse: true,
-    verboseLogs,
-  })
+  const { buildInitializeServer, allowedOrigins, serverURL, verboseLogs = false } = options
 
   const postHandler = async (req: PayloadRequest): Promise<Response> => {
     const headers = req.headers as Headers | undefined
@@ -85,6 +87,12 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
     }
 
     if (!req.url) return jsonRpcError('Missing request URL', -32600, 400)
+
+    const handler = createMcpHandler(buildInitializeServer(req), undefined, {
+      basePath: MCP_BASE_PATH,
+      disableSse: true,
+      verboseLogs,
+    })
 
     const fetchRequest = new Request(req.url, {
       method: req.method ?? 'POST',
