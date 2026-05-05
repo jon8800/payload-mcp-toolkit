@@ -77,11 +77,13 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const blockNesting = buildBlockNestingMap(collections, allBlocks)
     const relationships = buildRelationshipGraph(collectionSchemas)
 
-    const previewSiteUrl =
-      options.preview?.siteUrl ??
-      incomingConfig.serverURL ??
-      process.env.NEXT_PUBLIC_SERVER_URL ??
-      process.env.SITE_URL
+    const previewSiteUrl = options.preview?.disabled
+      ? undefined
+      : options.preview?.siteUrl ??
+        incomingConfig.serverURL ??
+        process.env.NEXT_PUBLIC_SERVER_URL ??
+        process.env.SITE_URL
+    const previewDisabled = options.preview?.disabled === true
 
     const { draftCollections, excluded } = computeDraftCollections(collections, {
       draftBehavior: options.draftBehavior,
@@ -122,7 +124,13 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const tools: ToolFactoryOutput[] = ([
       createCreateDocumentTool(exposedSchemas, draftCollections),
       createDeleteDocumentTool(exposedSchemas),
-      createFindDocumentTool(exposedSchemas, draftCollections, collectionsBySlug, previewSiteUrl),
+      createFindDocumentTool(
+        exposedSchemas,
+        draftCollections,
+        collectionsBySlug,
+        previewSiteUrl,
+        previewDisabled,
+      ),
       createPatchLayoutTool(blockCatalog, blockNesting, draftCollections),
       createPublishDraftTool(draftCollections),
       createResolveReferenceTool(searchableCollections),

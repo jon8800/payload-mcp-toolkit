@@ -14,15 +14,22 @@ function buildReq(overrides: {
   host?: string | null
   method?: string
   body?: unknown
+  authenticated?: boolean
 }) {
   const headers = new Headers()
   if (overrides.origin) headers.set('origin', overrides.origin)
   if (overrides.host) headers.set('host', overrides.host)
+  const authenticated = overrides.authenticated !== false
   return {
     url: 'https://app.example.com/api/mcp',
     method: overrides.method ?? 'POST',
     headers,
     body: overrides.body ?? null,
+    user: authenticated
+      ? {
+          _mcpKey: { keyId: 'k1', keyPrefix: 'abc12345', scopes: null },
+        }
+      : null,
   }
 }
 
@@ -34,6 +41,11 @@ beforeEach(() => {
 describe('createMcpEndpoints', () => {
   const initializeServer = vi.fn()
   const buildInitializeServer = vi.fn(() => initializeServer)
+
+  beforeEach(() => {
+    initializeServer.mockClear()
+    buildInitializeServer.mockClear()
+  })
 
   it('registers POST + GET endpoints at /mcp', () => {
     const endpoints = createMcpEndpoints({ buildInitializeServer })
@@ -112,5 +124,15 @@ describe('createMcpEndpoints', () => {
     const [forwarded] = handlerMock.mock.calls[0]!
     expect(forwarded).toBeInstanceOf(Request)
     expect((forwarded as Request).method).toBe('POST')
+  })
+
+  it('rejects unauthenticated POSTs with 401 before constructing the mcp-handler', async () => {
+    const [postEndpoint] = createMcpEndpoints({ buildInitializeServer })
+    const res = await postEndpoint.handler(buildReq({ authenticated: false }) as never)
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: { message: string } }
+    expect(body.error.message).toMatch(/MCP API key required/)
+    expect(handlerMock).not.toHaveBeenCalled()
+    expect(buildInitializeServer).not.toHaveBeenCalled()
   })
 })

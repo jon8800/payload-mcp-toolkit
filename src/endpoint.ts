@@ -1,6 +1,7 @@
 import type { Endpoint, PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { createMcpHandler } from 'mcp-handler'
+import { getApiKeyContext } from './auth-strategy'
 
 export const MCP_BASE_PATH = '/api/mcp'
 export const MCP_ENDPOINT_PATH = '/mcp'
@@ -84,6 +85,15 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
     }
     if (!isOriginAllowed(origin, allowedOrigins)) {
       return jsonRpcError('Origin not allowed', -32600, 403)
+    }
+
+    // Auth gate. The bearer strategy populates req.user._mcpKey on a valid
+    // Authorization: Bearer <key>; missing context means the request did not
+    // present a recognized MCP API key. We refuse before constructing any
+    // mcp-handler — refusing here prevents tools/list and tool dispatch from
+    // running on unauthenticated requests.
+    if (!getApiKeyContext(req)) {
+      return jsonRpcError('Unauthorized: MCP API key required', -32001, 401)
     }
 
     if (!req.url) return jsonRpcError('Missing request URL', -32600, 400)

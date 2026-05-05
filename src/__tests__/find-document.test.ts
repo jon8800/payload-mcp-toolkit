@@ -122,6 +122,22 @@ describe('findDocument', () => {
     expect(allText).toMatch(/admin panel/i)
   })
 
+  it('omits preview decoration entirely when previewDisabled is true', async () => {
+    const tool = createFindDocumentTool(
+      schemas,
+      drafts,
+      configs,
+      'https://app.example.com',
+      true,
+    )
+    const req = buildReq()
+    req.payload.findByID.mockResolvedValue({ id: 'a', slug: 'hello', _status: 'draft' })
+    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    expect(result.content).toHaveLength(1)
+    const decoration = result.content.slice(1)
+    expect(decoration).toHaveLength(0)
+  })
+
   it('catches errors and returns text error response, no exception', async () => {
     const tool = createFindDocumentTool(schemas, drafts, configs, undefined)
     const req = buildReq()

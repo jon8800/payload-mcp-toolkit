@@ -41,6 +41,35 @@ describe('assertScopeAllows', () => {
     expect(decision.allowed).toBe(false)
   })
 
+  it('treats scopes.collections as a whitelist — unlisted collections are denied', () => {
+    const scopes = { collections: { posts: ['read', 'update'] as never } }
+    expect(assertScopeAllows(scopes, 'updateDocument', 'pages').allowed).toBe(false)
+    expect(assertScopeAllows(scopes, 'deleteDocument', 'categories').allowed).toBe(false)
+    // Listed collection still works for allowed actions
+    expect(assertScopeAllows(scopes, 'updateDocument', 'posts').allowed).toBe(true)
+  })
+
+  it('blocks no-collection tools at the preset action level (read-only cannot uploadMedia)', () => {
+    const decision = assertScopeAllows({ preset: 'read-only' }, 'uploadMedia', undefined)
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/create/)
+  })
+
+  it('allows no-collection read tools under read-only preset', () => {
+    expect(assertScopeAllows({ preset: 'read-only' }, 'searchContent', undefined).allowed).toBe(
+      true,
+    )
+    expect(assertScopeAllows({ preset: 'read-only' }, 'resolveReference', undefined).allowed).toBe(
+      true,
+    )
+  })
+
+  it('denies no-collection tools when key is collection-scoped only (no preset)', () => {
+    const scopes = { collections: { posts: ['read'] as never } }
+    expect(assertScopeAllows(scopes, 'searchContent', undefined).allowed).toBe(false)
+    expect(assertScopeAllows(scopes, 'uploadMedia', undefined).allowed).toBe(false)
+  })
+
   it('tools.deny blocks an explicitly listed tool', () => {
     const decision = assertScopeAllows(
       { preset: 'admin', tools: { deny: ['safeDelete'] } },
@@ -235,6 +264,22 @@ describe('createInitializeServer', () => {
     await wrapped({ collection: 'posts', data: big }, {})
     const [logFields] = req.payload.logger.error.mock.calls[0]!
     expect(logFields.argsSummary.data).toBe('<truncated:5000>')
+  })
+
+  it('normalizes z.object() params to a raw shape before registering with the SDK', () => {
+    const tool = {
+      name: 'resolveReference',
+      description: 'x',
+      parameters: z.object({ query: z.string(), collection: z.string().optional() }),
+      handler: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
+    }
+    const init = createInitializeServer({ tools: [tool] })
+    init(buildReq() as never)(server as never)
+    const inputSchema = server.registerTool.mock.calls[0]![1]!.inputSchema as Record<
+      string,
+      unknown
+    >
+    expect(Object.keys(inputSchema).sort()).toEqual(['collection', 'query'])
   })
 
   it('stamps mcp context on req before invoking the handler', async () => {

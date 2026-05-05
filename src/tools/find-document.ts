@@ -36,6 +36,7 @@ export function createFindDocumentTool(
   draftCollections: Set<string>,
   collectionsBySlug: Map<string, CollectionConfig>,
   previewSiteUrl: string | undefined,
+  previewDisabled = false,
 ) {
   const findableSlugs = [...collectionSchemas.keys()]
   const descriptionLines = findableSlugs.map(
@@ -111,6 +112,7 @@ export function createFindDocumentTool(
             user: req.user,
           })
           const base = jsonResponse(doc)
+          if (previewDisabled) return base
           return await decorateDraftResponse(
             base,
             doc as Record<string, unknown>,
@@ -148,7 +150,7 @@ export function createFindDocumentTool(
           docs: result.docs,
         })
 
-        if (!collectionConfig || !draftCollections.has(collection)) return base
+        if (previewDisabled || !collectionConfig || !draftCollections.has(collection)) return base
 
         // Decorate any draft docs in the page with preview URLs.
         let decorated = base

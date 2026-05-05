@@ -1,6 +1,6 @@
 import type { PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z, type ZodTypeAny } from 'zod'
+import { z, ZodObject, type ZodTypeAny } from 'zod'
 import {
   getApiKeyContext,
   type CollectionAction,
@@ -15,12 +15,31 @@ import { stampMcpContext, type McpTextResponse } from './tools/_helpers'
 export interface ToolFactoryOutput {
   name: string
   description: string
-  parameters: Record<string, ZodTypeAny>
+  /**
+   * Either a raw Zod shape (`{ key: ZodType }`) or a `z.object({...})`
+   * instance. The registry normalises both before registering with the SDK.
+   */
+  parameters: Record<string, ZodTypeAny> | ZodObject<Record<string, ZodTypeAny>>
   handler: (
     args: Record<string, unknown>,
     req: PayloadRequest,
     extra: unknown,
   ) => Promise<McpTextResponse> | McpTextResponse
+}
+
+/**
+ * Returns the raw `{ name: ZodType }` shape for either a raw shape or a
+ * `z.object({...})` instance. The MCP SDK's `registerTool` expects the raw
+ * shape under `inputSchema`; passing a ZodObject silently registers an
+ * empty schema and breaks args validation.
+ */
+function toZodShape(
+  parameters: Record<string, ZodTypeAny> | ZodObject<Record<string, ZodTypeAny>>,
+): Record<string, ZodTypeAny> {
+  if (parameters instanceof ZodObject) {
+    return parameters.shape as Record<string, ZodTypeAny>
+  }
+  return parameters
 }
 
 export interface PromptFactoryOutput {
@@ -81,6 +100,16 @@ export interface ScopeDecision {
  * Pure function: given the request's scopes and the tool/collection in play,
  * decide whether the tool call is permitted. Null/undefined scopes grant
  * full access (back-compat for keys that pre-date scoped authz).
+ *
+ * Fail-closed semantics:
+ *   - When `scopes.collections` is set, it is a *whitelist* — collections
+ *     not listed there are denied for this key. (Per-collection overrides
+ *     replace the preset's action set when present, but absence of the
+ *     collection is denial, not fallback to preset.)
+ *   - When the tool has no `collection` arg (e.g. `searchContent`,
+ *     `uploadMedia`, `resolveReference`), the action implied by the tool
+ *     is checked against the preset's allowed actions. If a preset is set
+ *     and the action is not in its list, the call is denied.
  */
 export function assertScopeAllows(
   scopes: KeyScopes | null | undefined,
@@ -108,17 +137,54 @@ export function assertScopeAllows(
     }
   }
 
+  const action = TOOL_TO_ACTION[toolName]
+  const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
+  const collectionsScope = scopes.collections
+
   if (collection) {
-    const action = TOOL_TO_ACTION[toolName]
     if (!action) return { allowed: true }
-    const override = scopes.collections?.[collection]
-    const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
-    const effective = override ?? presetActions
-    if (effective && !effective.includes(action)) {
+    if (collectionsScope) {
+      const override = collectionsScope[collection]
+      if (!override) {
+        return {
+          allowed: false,
+          reason: `Collection "${collection}" is not in this API key's allowed collections.`,
+        }
+      }
+      if (!override.includes(action)) {
+        return {
+          allowed: false,
+          reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's scope.`,
+        }
+      }
+      return { allowed: true }
+    }
+    if (presetActions && !presetActions.includes(action)) {
       return {
         allowed: false,
-        reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's scope.`,
+        reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's preset.`,
       }
+    }
+    return { allowed: true }
+  }
+
+  // No collection arg: the tool acts at the account level (search across
+  // all readable collections, upload media, resolve references, etc.).
+  // Check the implied action against the preset, if one is set.
+  if (action && presetActions && !presetActions.includes(action)) {
+    return {
+      allowed: false,
+      reason: `Action "${action}" is not permitted by this API key's preset.`,
+    }
+  }
+
+  // When a key uses only `scopes.collections` (no preset), tools without a
+  // collection arg are denied — the operator has scoped the key to specific
+  // collections, so an account-wide tool would broaden the surface.
+  if (action && !presetActions && collectionsScope) {
+    return {
+      allowed: false,
+      reason: `Tool "${toolName}" requires a collection argument under this API key's collection-scoped configuration.`,
     }
   }
 
@@ -285,13 +351,11 @@ export function createInitializeServer(
         }
       }
 
-      // Cast: SDK's inputSchema accepts a ZodRawShape; our parameters use the
-      // same shape under a different field name.
       server.registerTool(
         tool.name,
         {
           description: tool.description,
-          inputSchema: tool.parameters as Record<string, ZodTypeAny>,
+          inputSchema: toZodShape(tool.parameters),
         },
         wrapped as never,
       )
