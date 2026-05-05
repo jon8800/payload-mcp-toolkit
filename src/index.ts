@@ -1,5 +1,4 @@
 import type { Block, CollectionConfig, Config, Plugin } from 'payload'
-import { mcpPlugin } from '@payloadcms/plugin-mcp'
 import type { ContentToolkitOptions } from './types'
 import {
   introspectCollections,
@@ -9,8 +8,15 @@ import {
 } from './introspection'
 import { generatePrompts } from './prompts'
 import { generateResources } from './resources'
-import { generateMcpCollectionConfigs } from './draft-workflow'
+import { computeDraftCollections } from './draft-workflow'
+import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys'
+import { createBearerStrategy } from './auth-strategy'
+import { createMcpEndpoints } from './endpoint'
+import { createInitializeServer, type ToolFactoryOutput } from './registry'
+import { assertNoSlugConflict, assertNoUpstreamPlugin } from './conflict-detection'
 import { createCreateDocumentTool } from './tools/create-document'
+import { createDeleteDocumentTool } from './tools/delete-document'
+import { createFindDocumentTool } from './tools/find-document'
 import { createPatchLayoutTool } from './tools/patch-layout'
 import { createPublishDraftTool } from './tools/publish-draft'
 import { createResolveReferenceTool } from './tools/resolve-reference'
@@ -22,22 +28,47 @@ import { createUploadMediaTool } from './tools/upload-media'
 import { createListVersionsTool, createRestoreVersionTool } from './tools/versions'
 
 /**
- * Payload MCP Toolkit
+ * Resolves the user collection slug for API-key linkage.
  *
- * Layered on top of the official @payloadcms/plugin-mcp. The toolkit
- * introspects your Payload config and registers schema-aware prompts,
- * resources, and tools so AI clients can drive the CMS without
- * hand-built plumbing.
+ * Resolution order: explicit `options.apiKeyCollection.userCollection` →
+ * explicit `options.userCollection` → `incomingConfig.admin.user` →
+ * 'users' as a last resort.
+ */
+function resolveUserCollection(
+  options: ContentToolkitOptions,
+  incomingConfig: Config,
+): string {
+  return (
+    options.apiKeyCollection?.userCollection ??
+    options.userCollection ??
+    (incomingConfig.admin?.user as string | undefined) ??
+    'users'
+  )
+}
+
+/**
+ * payload-mcp-toolkit — standalone Payload v3 MCP plugin.
+ *
+ * Owns the `/api/mcp` endpoint, the `payload-mcp-api-keys` collection,
+ * bearer authentication via Payload's `auth.strategies` extension point,
+ * and the per-tool scope check. Upstream `@payloadcms/plugin-mcp` is no
+ * longer required (and is incompatible — see `assertNoUpstreamPlugin`).
  *
  * Zero-config usage:
  * ```ts
  * plugins: [contentToolkitPlugin()]
  * ```
  *
- * Every option below is an optional escape hatch — see ContentToolkitOptions.
+ * See `ContentToolkitOptions` for the (entirely optional) escape hatches.
  */
 export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
   return (incomingConfig: Config): Config => {
+    const apiKeysSlug = options.apiKeyCollection?.slug ?? API_KEYS_DEFAULT_SLUG
+
+    // Conflict detection — fail fast with actionable messages.
+    assertNoUpstreamPlugin(incomingConfig.plugins)
+    assertNoSlugConflict(incomingConfig.collections as CollectionConfig[] | undefined, apiKeysSlug)
+
     const collections = (incomingConfig.collections ?? []) as CollectionConfig[]
     const allBlocks = (incomingConfig.blocks ?? []) as Block[]
 
@@ -46,102 +77,116 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const blockNesting = buildBlockNestingMap(collections, allBlocks)
     const relationships = buildRelationshipGraph(collectionSchemas)
 
-    // Preview siteUrl resolves: explicit option → Payload serverURL → env vars.
-    // May be undefined; relative-path preview URLs are skipped in that case.
     const previewSiteUrl =
       options.preview?.siteUrl ??
       incomingConfig.serverURL ??
       process.env.NEXT_PUBLIC_SERVER_URL ??
       process.env.SITE_URL
 
+    const { draftCollections, excluded } = computeDraftCollections(collections, {
+      draftBehavior: options.draftBehavior,
+      excludeCollections: options.exclude?.collections,
+      apiKeysSlug,
+    })
+
+    // Build a slug → CollectionConfig map for tools that need access to
+    // collection-level admin config (preview functions, etc).
+    const collectionsBySlug = new Map<string, CollectionConfig>()
+    for (const c of collections) {
+      if (!excluded.has(c.slug)) collectionsBySlug.set(c.slug, c)
+    }
+
+    // Schemas-without-excluded view, used by the polymorphic tool factories
+    // so excluded collections don't appear in tool descriptions.
+    const exposedSchemas = new Map<string, ReturnType<typeof introspectCollections> extends Map<string, infer V> ? V : never>()
+    for (const [slug, schema] of collectionSchemas) {
+      if (!excluded.has(slug)) exposedSchemas.set(slug, schema)
+    }
+
     const prompts = generatePrompts(
-      collectionSchemas,
+      exposedSchemas,
       blockCatalog,
       blockNesting,
       relationships,
       options.domainPrompts,
     )
-    const resources = generateResources(
-      collectionSchemas,
-      blockCatalog,
-      blockNesting,
-      relationships,
-    )
-
-    const { mcpCollections, draftCollections } = generateMcpCollectionConfigs(collections, {
-      siteUrl: previewSiteUrl,
-      draftBehavior: options.draftBehavior,
-      excludeCollections: options.exclude?.collections,
-      previewDisabled: options.preview?.disabled,
-    })
+    const resources = generateResources(exposedSchemas, blockCatalog, blockNesting, relationships)
 
     const searchableCollections = new Map<string, string[]>()
-    for (const [slug, schema] of collectionSchemas) {
+    for (const [slug, schema] of exposedSchemas) {
       if (schema.searchableFields.length > 0) {
         searchableCollections.set(slug, schema.searchableFields)
       }
     }
 
-    const tools: any[] = [
-      createCreateDocumentTool(collectionSchemas, draftCollections),
+    const tools: ToolFactoryOutput[] = ([
+      createCreateDocumentTool(exposedSchemas, draftCollections),
+      createDeleteDocumentTool(exposedSchemas),
+      createFindDocumentTool(exposedSchemas, draftCollections, collectionsBySlug, previewSiteUrl),
       createPatchLayoutTool(blockCatalog, blockNesting, draftCollections),
       createPublishDraftTool(draftCollections),
       createResolveReferenceTool(searchableCollections),
       createSafeDeleteTool(relationships),
-      createSearchContentTool(collectionSchemas),
-      createUpdateDocumentTool(collectionSchemas, draftCollections),
+      createSearchContentTool(exposedSchemas),
+      createUpdateDocumentTool(exposedSchemas, draftCollections),
       createUploadMediaTool({
         maxFileSize: options.mediaUpload?.maxFileSize,
         collectionSlug: options.mediaUpload?.collectionSlug,
       }),
       createListVersionsTool(draftCollections),
       createRestoreVersionTool(draftCollections),
-    ]
+    ] as unknown) as ToolFactoryOutput[]
 
-    const schedulePublish = createSchedulePublishTool(collectionSchemas, draftCollections)
-    if (schedulePublish) tools.push(schedulePublish)
+    const schedulePublish = createSchedulePublishTool(exposedSchemas, draftCollections)
+    if (schedulePublish) tools.push(schedulePublish as unknown as ToolFactoryOutput)
 
-    // Globals get `find` only. The official plugin's `update<Global>` tool
-    // hits the same `convertCollectionSchemaToZod` path that crashes on
-    // richText / upload / blocks fields (here it throws
-    // `Cannot convert undefined or null to object` because globals/update.ts
-    // calls `Object.entries(convertedFields.shape)` and the fallback
-    // `z.record()` has no `.shape`). Until the toolkit's `updateDocument`
-    // gains global support, edit globals via the admin panel.
-    const mcpGlobals: Record<
-      string,
-      { enabled: { find: boolean; update: boolean }; description?: string }
-    > = {}
-    const excludeGlobalSlugs = new Set(options.exclude?.globals ?? [])
-    for (const global of (incomingConfig.globals ?? []) as Array<{ slug: string }>) {
-      if (excludeGlobalSlugs.has(global.slug)) continue
-      mcpGlobals[global.slug] = {
-        enabled: { find: true, update: false },
-        description: `Read ${global.slug} global settings`,
-      }
-    }
-
-    // overrideAuth rebinds req.user from the API key's linked user so our
-    // custom tools' `overrideAccess: false` checks run against the right
-    // identity. userCollection passthrough lets the official plugin fall
-    // back to `incomingConfig.admin.user`.
-    const withMcp = mcpPlugin({
-      collections: mcpCollections as any,
-      globals: mcpGlobals as any,
-      userCollection: options.userCollection as any,
-      mcp: {
-        tools: tools as any[],
-        prompts: prompts as any[],
-        resources: resources as any[],
-      },
-      overrideAuth: async (req, getDefault) => {
-        const settings = await getDefault()
-        req.user = (settings as any).user
-        return settings
-      },
+    // Build the per-request initializer that mcp-handler invokes.
+    const buildInitializeServer = createInitializeServer({
+      tools,
+      prompts: prompts as never,
+      resources: resources as never,
     })
 
-    return withMcp(incomingConfig)
+    // Attach API-keys collection.
+    const userCollection = resolveUserCollection(options, incomingConfig)
+    const apiKeysCollection = createApiKeysCollection({ slug: apiKeysSlug, userCollection })
+    const updatedCollections: CollectionConfig[] = [...collections, apiKeysCollection]
+
+    // Attach the bearer strategy to the user collection's auth config.
+    const bearerStrategy = createBearerStrategy({
+      collectionSlug: apiKeysSlug,
+      userCollection,
+    })
+    const collectionsWithStrategy = updatedCollections.map((c) => {
+      if (c.slug !== userCollection) return c
+      const existingAuth = c.auth
+      if (!existingAuth) return c
+      const authConfig =
+        typeof existingAuth === 'object' && existingAuth !== null
+          ? { ...existingAuth }
+          : { useAPIKey: existingAuth === true ? false : false }
+      const existingStrategies = Array.isArray((authConfig as { strategies?: unknown[] }).strategies)
+        ? ((authConfig as { strategies: unknown[] }).strategies as unknown[])
+        : []
+      ;(authConfig as { strategies: unknown[] }).strategies = [
+        ...existingStrategies,
+        bearerStrategy,
+      ]
+      return { ...c, auth: authConfig } as CollectionConfig
+    })
+
+    // Attach the MCP endpoints additively to the host config.
+    const mcpEndpoints = createMcpEndpoints({
+      buildInitializeServer,
+      allowedOrigins: options.auth?.allowedOrigins,
+      serverURL: incomingConfig.serverURL,
+    })
+
+    return {
+      ...incomingConfig,
+      collections: collectionsWithStrategy,
+      endpoints: [...(incomingConfig.endpoints ?? []), ...mcpEndpoints],
+    }
   }
 }
 
@@ -156,3 +201,5 @@ export type {
   RelationshipEdge,
   FieldSchema,
 } from './types'
+
+export type { CollectionAction, KeyScopes, ScopePreset } from './auth-strategy'

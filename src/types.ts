@@ -68,6 +68,34 @@ export interface ContentToolkitOptions {
     /** Media collection slug (default: 'media') */
     collectionSlug?: string
   }
+
+  /**
+   * MCP transport / auth configuration. Mostly safe to leave unset;
+   * defaults to no-CORS server-to-server use only.
+   */
+  auth?: {
+    /**
+     * Origins permitted on the `Origin` header. Empty / unset means
+     * server-to-server callers only (no browser-based MCP clients).
+     * `*` is intentionally not honoured.
+     */
+    allowedOrigins?: string[]
+  }
+
+  /**
+   * Override API-key collection settings. Slug defaults to
+   * `payload-mcp-api-keys` for zero-touch upgrade compatibility with
+   * `@payloadcms/plugin-mcp` v0.3.x rows.
+   */
+  apiKeyCollection?: {
+    slug?: string
+    /**
+     * Override the user collection that API keys link to. By default
+     * the toolkit reuses the same `userCollection` resolution as elsewhere
+     * (`options.userCollection`, then `incomingConfig.admin.user`).
+     */
+    userCollection?: string
+  }
 }
 
 /** A domain prompt that teaches the AI site-specific vocabulary */
