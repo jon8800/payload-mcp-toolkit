@@ -1,7 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { useField } from '@payloadcms/ui'
+import { CheckboxInput, useField } from '@payloadcms/ui'
+import { toWords } from 'payload/shared'
 
 type Action = 'read' | 'create' | 'update' | 'delete'
 const ACTIONS: Action[] = ['read', 'create', 'update', 'delete']
@@ -56,6 +57,26 @@ function mapToRows(map: Map<string, Set<Action>>, allCollections: string[]): Mat
   return rows
 }
 
+const cellStyle: React.CSSProperties = {
+  textAlign: 'center',
+  padding: '0.5rem 0.5rem',
+  borderLeft: '1px solid var(--theme-elevation-100)',
+  verticalAlign: 'middle',
+}
+
+const headerCellStyle: React.CSSProperties = {
+  ...cellStyle,
+  background: 'var(--theme-elevation-50)',
+  borderBottom: '1px solid var(--theme-elevation-150)',
+  fontWeight: 600,
+}
+
+const labelCellStyle: React.CSSProperties = {
+  textAlign: 'left',
+  padding: '0.5rem 0.75rem',
+  verticalAlign: 'middle',
+}
+
 function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.ReactElement {
   const { value, setValue } = useField<MatrixValue>({ path: props.path, hasRows: false })
   const collections: string[] = Array.isArray(props.availableCollections)
@@ -79,9 +100,24 @@ function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.React
     const set = map.get(slug)
     return !!set && ACTIONS.every((a) => set.has(a))
   }
+  const isRowPartial = (slug: string): boolean => {
+    const set = map.get(slug)
+    return !!set && set.size > 0 && set.size < ACTIONS.length
+  }
   const isColumnFull = (action: Action): boolean =>
     collections.length > 0 && collections.every((s) => map.get(s)?.has(action))
-  const isAllFull = collections.length > 0 && collections.every((s) => isRowFull(s))
+  const isColumnPartial = (action: Action): boolean => {
+    if (collections.length === 0) return false
+    const checked = collections.filter((s) => map.get(s)?.has(action)).length
+    return checked > 0 && checked < collections.length
+  }
+  const allCheckedCount = collections.reduce(
+    (sum, s) => sum + (map.get(s)?.size ?? 0),
+    0,
+  )
+  const allTotalCount = collections.length * ACTIONS.length
+  const isAllFull = allTotalCount > 0 && allCheckedCount === allTotalCount
+  const isAllPartial = allCheckedCount > 0 && allCheckedCount < allTotalCount
 
   const toggleCell = (slug: string, action: Action, checked: boolean) =>
     update((m) => {
@@ -151,87 +187,89 @@ function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.React
         }}
       >
         <thead>
-          <tr style={{ background: 'var(--theme-elevation-50)' }}>
-            <th
-              style={{
-                textAlign: 'left',
-                padding: '0.5rem 0.75rem',
-                fontWeight: 600,
-                borderBottom: '1px solid var(--theme-elevation-150)',
-              }}
-            >
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', margin: 0 }}>
-                <input
-                  type="checkbox"
+          <tr>
+            <th style={{ ...headerCellStyle, textAlign: 'left' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <span>Collection</span>
+                <CheckboxInput
                   checked={isAllFull}
-                  onChange={(e) => toggleAll(e.currentTarget.checked)}
+                  partialChecked={isAllPartial && !isAllFull}
+                  onToggle={(e) => toggleAll(e.currentTarget.checked)}
+                  label="All"
                 />
-                Collection
-              </label>
+              </div>
             </th>
             {ACTIONS.map((action) => (
-              <th
-                key={action}
-                style={{
-                  textAlign: 'center',
-                  padding: '0.5rem 0.5rem',
-                  fontWeight: 600,
-                  borderBottom: '1px solid var(--theme-elevation-150)',
-                  borderLeft: '1px solid var(--theme-elevation-100)',
-                }}
-              >
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center', cursor: 'pointer', margin: 0 }}>
-                  <input
-                    type="checkbox"
+              <th key={action} style={headerCellStyle}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                  <span>{ACTION_LABELS[action]}</span>
+                  <CheckboxInput
                     checked={isColumnFull(action)}
-                    onChange={(e) => toggleColumn(action, e.currentTarget.checked)}
+                    partialChecked={isColumnPartial(action) && !isColumnFull(action)}
+                    onToggle={(e) => toggleColumn(action, e.currentTarget.checked)}
                   />
-                  {ACTION_LABELS[action]}
-                </label>
+                </div>
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {collections.map((slug, idx) => (
-            <tr
-              key={slug}
-              style={{
-                background:
-                  idx % 2 === 0 ? 'var(--theme-input-bg)' : 'var(--theme-elevation-25)',
-              }}
-            >
-              <td style={{ padding: '0.4rem 0.75rem', borderTop: idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={isRowFull(slug)}
-                    onChange={(e) => toggleRow(slug, e.currentTarget.checked)}
-                    aria-label={`Toggle all actions for ${slug}`}
-                  />
-                  <code style={{ fontSize: '0.9em' }}>{slug}</code>
-                </label>
-              </td>
-              {ACTIONS.map((action) => (
+          {collections.map((slug, idx) => {
+            const niceName = toWords(slug)
+            return (
+              <tr
+                key={slug}
+                style={{
+                  background:
+                    idx % 2 === 0 ? 'var(--theme-input-bg)' : 'var(--theme-elevation-25)',
+                }}
+              >
                 <td
-                  key={action}
                   style={{
-                    textAlign: 'center',
-                    padding: '0.4rem 0.5rem',
-                    borderLeft: '1px solid var(--theme-elevation-100)',
-                    borderTop: idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)',
+                    ...labelCellStyle,
+                    borderTop:
+                      idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)',
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={isCellChecked(slug, action)}
-                    onChange={(e) => toggleCell(slug, action, e.currentTarget.checked)}
-                    aria-label={`${ACTION_LABELS[action]} on ${slug}`}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <CheckboxInput
+                      checked={isRowFull(slug)}
+                      partialChecked={isRowPartial(slug) && !isRowFull(slug)}
+                      onToggle={(e) => toggleRow(slug, e.currentTarget.checked)}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span>{niceName}</span>
+                      <code
+                        style={{
+                          fontSize: '0.75rem',
+                          color: 'var(--theme-elevation-500)',
+                          background: 'transparent',
+                          padding: 0,
+                        }}
+                      >
+                        {slug}
+                      </code>
+                    </div>
+                  </div>
                 </td>
-              ))}
-            </tr>
-          ))}
+                {ACTIONS.map((action) => (
+                  <td
+                    key={action}
+                    style={{
+                      ...cellStyle,
+                      borderTop:
+                        idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)',
+                    }}
+                  >
+                    <CheckboxInput
+                      checked={isCellChecked(slug, action)}
+                      onToggle={(e) => toggleCell(slug, action, e.currentTarget.checked)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
