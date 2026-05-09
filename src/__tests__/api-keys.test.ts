@@ -78,10 +78,10 @@ describe('createApiKeysCollection', () => {
       'expiresAt',
       'revokedAt',
       'lastUsedAt',
-      'scopes',
     ]) {
       expect(fieldNames, `missing field: ${expected}`).toContain(expected)
     }
+    expect(fieldNames).not.toContain('scopes')
   })
 
   it('exposes the four preset values with custom as the default', () => {
@@ -145,15 +145,6 @@ describe('createApiKeysCollection', () => {
     ) as { options?: Array<{ value: string }> }
     expect(toolAllow.options?.map((o) => o.value)).toEqual(['x', 'y'])
     expect(toolDeny.options?.map((o) => o.value)).toEqual(['x', 'y'])
-  })
-
-  it('keeps the legacy scopes JSON column hidden and read-only', () => {
-    const collection = createApiKeysCollection(baseOptions)
-    const legacy = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'scopes' }> => 'name' in f && f.name === 'scopes',
-    ) as { admin?: { hidden?: boolean; readOnly?: boolean } }
-    expect(legacy.admin?.hidden).toBe(true)
-    expect(legacy.admin?.readOnly).toBe(true)
   })
 
   it('keyPrefix beforeChange captures first 8 chars of a freshly generated apiKey', () => {

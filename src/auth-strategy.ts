@@ -31,19 +31,10 @@ interface CollectionScopeRow {
 interface ApiKeyRow {
   id: string | number
   user: unknown
-  /**
-   * Typed scope fields (v0.4.1+). Composed into KeyScopes by `composeScopes`
-   * when any are populated.
-   */
   preset?: ScopePreset | 'custom' | null
   collectionScopes?: CollectionScopeRow[] | null
   toolAllow?: string[] | null
   toolDeny?: string[] | null
-  /**
-   * Legacy v0.4.0 JSON column. Used only when none of the typed fields above
-   * are populated. Drops next release.
-   */
-  scopes?: KeyScopes | null
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
   apiKey?: string | null
@@ -53,14 +44,9 @@ interface ApiKeyRow {
 const VALID_ACTIONS: ReadonlySet<CollectionAction> = new Set(['read', 'create', 'update', 'delete'])
 
 /**
- * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`.
- *
- * Resolution order:
- *   1. If any typed field (`preset`, `collectionScopes`, `toolAllow`,
- *      `toolDeny`) is populated, build from those — legacy `scopes` is
- *      ignored.
- *   2. Else fall back to the legacy `scopes` JSON column.
- *   3. Else null (full access — back-compat for unscoped keys).
+ * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`
+ * from the typed scope fields on the api-key row. Returns null when no
+ * fields are populated (= full access).
  *
  * Note: a `preset` value of `'custom'` is a UI sentinel meaning "use my
  * override fields" — it does NOT become `KeyScopes.preset`.
@@ -75,9 +61,8 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
   const hasToolAllow = toolAllow.length > 0
   const hasToolDeny = toolDeny.length > 0
 
-  const anyTypedField = hasPreset || hasCollectionScopes || hasToolAllow || hasToolDeny
-  if (!anyTypedField) {
-    return (row.scopes as KeyScopes | null | undefined) ?? null
+  if (!hasPreset && !hasCollectionScopes && !hasToolAllow && !hasToolDeny) {
+    return null
   }
 
   const out: KeyScopes = {}

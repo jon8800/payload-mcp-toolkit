@@ -46,23 +46,15 @@ function makeHeaders(token: string | null): { get: (name: string) => string | nu
 describe('composeScopes', () => {
   const baseRow = { id: 'k', user: { id: 'u' } }
 
-  it('returns null when no typed fields and no legacy scopes are populated', () => {
+  it('returns null when no typed fields are populated (= full access)', () => {
     expect(composeScopes({ ...baseRow })).toBeNull()
-    expect(composeScopes({ ...baseRow, scopes: null })).toBeNull()
   })
 
-  it('falls back to legacy scopes JSON when no typed fields are present', () => {
-    const legacy = { preset: 'editor' as const, collections: { posts: ['read' as const] } }
-    expect(composeScopes({ ...baseRow, scopes: legacy })).toEqual(legacy)
-  })
-
-  it('builds KeyScopes from typed fields when populated, ignoring legacy scopes', () => {
+  it('builds KeyScopes from typed fields when populated', () => {
     const out = composeScopes({
       ...baseRow,
       preset: 'editor',
       toolDeny: ['safeDelete'],
-      // Legacy column is intentionally also set; should be ignored.
-      scopes: { preset: 'admin' },
     })
     expect(out).toEqual({
       preset: 'editor',
@@ -163,7 +155,6 @@ describe('createBearerStrategy.authenticate', () => {
         {
           id: 'k1',
           user: { id: 'u1', email: 'a@b.com' },
-          scopes: null,
           revokedAt: '2025-01-01T00:00:00Z',
         },
       ],
@@ -207,7 +198,7 @@ describe('createBearerStrategy.authenticate', () => {
         {
           id: 'k1',
           user: { id: 'u1', email: 'a@b.com' },
-          scopes: { preset: 'admin' },
+          preset: 'admin',
           keyPrefix: 'abc12345',
         },
       ],
@@ -234,16 +225,16 @@ describe('createBearerStrategy.authenticate', () => {
     )
   })
 
-  it('hydrates _mcpKey.scopes from typed fields when present, ignoring legacy scopes', async () => {
+  it('hydrates _mcpKey.scopes from typed fields with collectionScopes + toolDeny', async () => {
     const payload = buildPayload({
       rows: [
         {
           id: 'k3',
           user: { id: 'u3' },
           keyPrefix: 'deadbeef',
-          preset: 'editor',
+          preset: 'custom',
+          collectionScopes: [{ collection: 'posts', actions: ['read', 'update'] }],
           toolDeny: ['safeDelete'],
-          scopes: { preset: 'admin' }, // legacy column ignored when typed fields are populated
         },
       ],
     })
@@ -252,7 +243,7 @@ describe('createBearerStrategy.authenticate', () => {
       payload: payload as never,
     } as never)
     expect((result.user as { _mcpKey: { scopes: unknown } })._mcpKey.scopes).toEqual({
-      preset: 'editor',
+      collections: { posts: ['read', 'update'] },
       tools: { deny: ['safeDelete'] },
     })
   })

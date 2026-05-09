@@ -55,8 +55,6 @@ const isCustomPreset = (data: unknown): boolean =>
  *   - `toolAllow` / `toolDeny`: per-tool whitelist / blacklist
  *   - `expiresAt`, `revokedAt`, `lastUsedAt`: lifecycle fields
  *   - `keyPrefix`: human-readable key id surfaced in audit logs
- *   - `scopes` (hidden, read-only): legacy JSON column retained for one
- *     release for back-compat with v0.4.0 rows. Drop in the next release.
  */
 export function createApiKeysCollection(
   options: CreateApiKeysCollectionOptions,
@@ -229,16 +227,6 @@ export function createApiKeysCollection(
         admin: {
           readOnly: true,
           description: 'Updated on each successful authentication. Fire-and-forget; not on the request hot path.',
-        },
-      },
-      {
-        name: 'scopes',
-        type: 'json',
-        admin: {
-          hidden: true,
-          readOnly: true,
-          description:
-            'Legacy v0.4.0 scopes column. Retained read-only for one release for back-compat. New keys configure scopes via the typed fields above; this column will be dropped in the next release.',
         },
       },
     ],
