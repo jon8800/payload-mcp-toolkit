@@ -13,6 +13,20 @@ describe('assertScopeAllows', () => {
     expect(assertScopeAllows({}, 'createDocument', 'posts').allowed).toBe(true)
   })
 
+  it('denies every dispatch path under the deny-all sentinel from composeScopes', () => {
+    // composeScopes returns this shape for "preset = custom, no overrides".
+    // The registry must reject all three dispatch shapes:
+    //   - collection-keyed tools (createDocument, etc.)
+    //   - account-wide tools (searchContent, uploadMedia)
+    //   - delete tools
+    const denyAll = { collections: {}, tools: { allow: [] } }
+    expect(assertScopeAllows(denyAll, 'createDocument', 'posts').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'findDocument', 'posts').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'deleteDocument', 'posts').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'searchContent', undefined).allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'uploadMedia', undefined).allowed).toBe(false)
+  })
+
   it('respects the read-only preset for write tools', () => {
     const decision = assertScopeAllows({ preset: 'read-only' }, 'createDocument', 'posts')
     expect(decision.allowed).toBe(false)

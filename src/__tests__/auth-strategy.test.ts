@@ -73,6 +73,26 @@ describe('composeScopes', () => {
     })
   })
 
+  it('returns a deny-all sentinel when preset === "custom" with no overrides', () => {
+    // Fail-closed contract: a freshly-created Custom key with empty
+    // collectionScopes / toolAllow / toolDeny denies every dispatch instead
+    // of falling through to the "no scopes set = full access" guard.
+    expect(composeScopes({ ...baseRow, preset: 'custom' })).toEqual({
+      collections: {},
+      tools: { allow: [] },
+    })
+  })
+
+  it('honours partial custom overrides (only toolAllow) without injecting deny-all', () => {
+    // Verifies the sentinel only fires when ALL override fields are empty.
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      toolAllow: ['searchContent'],
+    })
+    expect(out).toEqual({ tools: { allow: ['searchContent'] } })
+  })
+
   it('preserves an empty actions array as explicit-deny-all on a listed collection', () => {
     const out = composeScopes({
       ...baseRow,

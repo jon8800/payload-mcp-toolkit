@@ -45,11 +45,21 @@ const VALID_ACTIONS: ReadonlySet<CollectionAction> = new Set(['read', 'create', 
 
 /**
  * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`
- * from the typed scope fields on the api-key row. Returns null when no
- * fields are populated (= full access).
+ * from the typed scope fields on the api-key row.
  *
- * Note: a `preset` value of `'custom'` is a UI sentinel meaning "use my
- * override fields" — it does NOT become `KeyScopes.preset`.
+ * Returns null when no typed fields are populated (= full access — back-compat
+ * for keys that pre-date scoped authz).
+ *
+ * Fail-closed contract for the `'custom'` preset:
+ *   - `'custom'` is a UI sentinel meaning "use my override fields"; it never
+ *     becomes `KeyScopes.preset` itself.
+ *   - When the operator selects `'custom'` but populates no overrides, this
+ *     function returns an explicit deny-all shape (`{ collections: {}, tools:
+ *     { allow: [] } }`) so the registry rejects every dispatch instead of
+ *     falling through to the "no scopes set = full access" guard.
+ *   - Partial-override custom keys (only `collectionScopes`, or only
+ *     `toolAllow` / `toolDeny`) are honoured as written — the deny-all
+ *     sentinel only fires when ALL override fields are empty.
  */
 export function composeScopes(row: ApiKeyRow): KeyScopes | null {
   const presetRaw = row.preset
@@ -63,6 +73,14 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
 
   if (!hasPreset && !hasCollectionScopes && !hasToolAllow && !hasToolDeny) {
     return null
+  }
+
+  // Custom preset with no overrides: deny everything. The empty `collections`
+  // whitelist denies every collection-scoped tool, and the empty `tools.allow`
+  // list denies every tool dispatch — so account-wide tools (uploadMedia,
+  // searchContent, etc.) are also denied.
+  if (presetRaw === 'custom' && !hasCollectionScopes && !hasToolAllow && !hasToolDeny) {
+    return { collections: {}, tools: { allow: [] } }
   }
 
   const out: KeyScopes = {}
