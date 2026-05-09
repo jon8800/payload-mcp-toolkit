@@ -13,10 +13,10 @@ export interface CreateApiKeysCollectionOptions {
    */
   userCollection: string
   /**
-   * Collection slugs offered as options for the `collectionScopes.collection`
-   * select. Snapshotted at plugin-init time from the host Payload config;
-   * adding a collection requires a dev-server restart for it to surface in
-   * the admin UI.
+   * Collection slugs offered to the collection-scopes matrix component.
+   * Snapshotted at plugin-init time from the host Payload config; adding a
+   * collection requires a dev-server restart for it to surface in the
+   * admin UI.
    */
   availableCollections: string[]
   /**
@@ -25,13 +25,6 @@ export interface CreateApiKeysCollectionOptions {
    */
   availableTools: string[]
 }
-
-const ACTION_OPTIONS = [
-  { label: 'Read', value: 'read' },
-  { label: 'Create', value: 'create' },
-  { label: 'Update', value: 'update' },
-  { label: 'Delete', value: 'delete' },
-] as const
 
 const PRESET_OPTIONS = [
   { label: 'Read-only', value: 'read-only' },
@@ -49,12 +42,12 @@ const isCustomPreset = (data: unknown): boolean =>
  * `apiKey` / `apiKeyIndex` columns match what `@payloadcms/plugin-mcp`
  * v0.3.x wrote — existing rows authenticate without re-issue.
  *
- * Adds the v0.4+ surface on top:
- *   - `preset`: role preset (read-only/editor/admin/custom)
- *   - `collectionScopes`: array of per-collection action overrides (custom only)
- *   - `toolAllow` / `toolDeny`: per-tool whitelist / blacklist
- *   - `expiresAt`, `revokedAt`, `lastUsedAt`: lifecycle fields
- *   - `keyPrefix`: human-readable key id surfaced in audit logs
+ * Layout:
+ *   - Main column: name, description, preset, scopes matrix (custom only),
+ *     tools collapsible (custom only).
+ *   - Sidebar: user relationship, key prefix, expiresAt, revokedAt,
+ *     lastUsedAt — identity + lifecycle metadata kept out of the
+ *     scope-editing flow.
  */
 export function createApiKeysCollection(
   options: CreateApiKeysCollectionOptions,
@@ -76,7 +69,6 @@ export function createApiKeysCollection(
   }
 
   const slug = options.slug ?? API_KEYS_DEFAULT_SLUG
-  const collectionOptions = options.availableCollections.map((s) => ({ label: s, value: s }))
   const toolOptions = options.availableTools.map((t) => ({ label: t, value: t }))
 
   const presetField: Field = {
@@ -87,58 +79,58 @@ export function createApiKeysCollection(
     options: PRESET_OPTIONS as unknown as { label: string; value: string }[],
     admin: {
       description:
-        'Role preset. "Custom" unlocks the per-collection and per-tool override fields below.',
+        'Role preset. "Custom" unlocks the per-collection matrix and the tool overrides below.',
     },
   }
 
+  // Stored shape: Array<{ collection: string; actions: ('read'|'create'|'update'|'delete')[] }>
+  // The default Payload UI for an `array` would force users to add rows
+  // one at a time; the custom matrix component renders all available
+  // collections at once with a checkbox grid (rows × actions).
   const collectionScopesField: Field = {
     name: 'collectionScopes',
-    type: 'array',
+    type: 'json',
+    admin: {
+      condition: isCustomPreset,
+      components: {
+        Field: 'payload-mcp-toolkit/client#CollectionScopesMatrix',
+      },
+      custom: {
+        availableCollections: options.availableCollections,
+      },
+    },
+  }
+
+  const toolsCollapsible: Field = {
+    type: 'collapsible',
+    label: 'Tool overrides',
     admin: {
       condition: isCustomPreset,
       description:
-        'Per-collection action overrides. Only honoured when preset is "Custom". An empty actions list denies all actions on that collection.',
+        'Per-tool whitelist / blacklist. Layered on top of preset and collection scopes.',
+      initCollapsed: true,
     },
     fields: [
       {
-        name: 'collection',
-        type: 'select',
-        required: true,
-        options: collectionOptions,
-        admin: { description: 'Target collection slug.' },
-      },
-      {
-        name: 'actions',
+        name: 'toolAllow',
         type: 'select',
         hasMany: true,
-        required: true,
-        options: ACTION_OPTIONS as unknown as { label: string; value: string }[],
-        admin: { description: 'Allowed actions on this collection.' },
+        options: toolOptions,
+        admin: {
+          description:
+            'If set, only these tools are callable with this key. Leave empty to allow any tool the collection scopes permit.',
+        },
+      },
+      {
+        name: 'toolDeny',
+        type: 'select',
+        hasMany: true,
+        options: toolOptions,
+        admin: {
+          description: 'These tools are blocked regardless of any other scope.',
+        },
       },
     ],
-  }
-
-  const toolAllowField: Field = {
-    name: 'toolAllow',
-    type: 'select',
-    hasMany: true,
-    options: toolOptions,
-    admin: {
-      condition: isCustomPreset,
-      description:
-        'If set, only these tools are callable with this key. Layered on top of preset / collection scopes.',
-    },
-  }
-
-  const toolDenyField: Field = {
-    name: 'toolDeny',
-    type: 'select',
-    hasMany: true,
-    options: toolOptions,
-    admin: {
-      description:
-        'These tools are blocked regardless of preset. Applies on top of any preset.',
-    },
   }
 
   return {
@@ -159,6 +151,7 @@ export function createApiKeysCollection(
       singular: 'API Key',
     },
     fields: [
+      // Main column.
       {
         name: 'name',
         type: 'text',
@@ -170,25 +163,28 @@ export function createApiKeysCollection(
         type: 'textarea',
         admin: { description: 'Optional notes about the purpose of this key.' },
       },
+      presetField,
+      collectionScopesField,
+      toolsCollapsible,
+
+      // Sidebar — identity + lifecycle.
       {
         name: 'user',
         type: 'relationship',
         relationTo: options.userCollection,
         required: true,
         admin: {
+          position: 'sidebar',
           description:
             'The user this key authenticates as. Tool calls use this user for access checks on target collections.',
         },
       },
-      presetField,
-      collectionScopesField,
-      toolAllowField,
-      toolDenyField,
       {
         name: 'keyPrefix',
         type: 'text',
         index: true,
         admin: {
+          position: 'sidebar',
           readOnly: true,
           description:
             'First 8 characters of the API key — used in audit logs to identify the key without exposing the full secret.',
@@ -211,6 +207,7 @@ export function createApiKeysCollection(
         name: 'expiresAt',
         type: 'date',
         admin: {
+          position: 'sidebar',
           description: 'Optional expiry. Requests authenticated with an expired key are rejected.',
         },
       },
@@ -218,6 +215,7 @@ export function createApiKeysCollection(
         name: 'revokedAt',
         type: 'date',
         admin: {
+          position: 'sidebar',
           description: 'Set to revoke a key. Revoked keys are rejected at auth time.',
         },
       },
@@ -225,8 +223,10 @@ export function createApiKeysCollection(
         name: 'lastUsedAt',
         type: 'date',
         admin: {
+          position: 'sidebar',
           readOnly: true,
-          description: 'Updated on each successful authentication. Fire-and-forget; not on the request hot path.',
+          description:
+            'Updated on each successful authentication. Fire-and-forget; not on the request hot path.',
         },
       },
     ],

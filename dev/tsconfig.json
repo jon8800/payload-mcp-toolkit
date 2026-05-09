@@ -12,7 +12,8 @@
     "baseUrl": "./",
     "paths": {
       "@payload-config": ["./payload.config.ts"],
-      "payload-mcp-toolkit": ["../src/index.ts"]
+      "payload-mcp-toolkit": ["../src/index.ts"],
+      "payload-mcp-toolkit/client": ["../src/components/index.ts"]
     },
     "noEmit": true,
     "emitDeclarationOnly": false

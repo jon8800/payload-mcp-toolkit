@@ -1,10 +1,22 @@
 import { describe, it, expect } from 'vitest'
+import type { Field } from 'payload'
 import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from '../api-keys'
 
 const baseOptions = {
   userCollection: 'users',
   availableCollections: ['posts', 'pages'],
   availableTools: ['findDocument', 'createDocument', 'safeDelete'],
+}
+
+function findNamed(fields: Field[], name: string): Field | undefined {
+  for (const f of fields) {
+    if ('name' in f && f.name === name) return f
+    if (f.type === 'collapsible' || f.type === 'row') {
+      const nested = findNamed(f.fields as Field[], name)
+      if (nested) return nested
+    }
+  }
+  return undefined
 }
 
 describe('createApiKeysCollection', () => {
@@ -21,11 +33,9 @@ describe('createApiKeysCollection', () => {
 
   it('binds the user relationship to the configured user collection', () => {
     const collection = createApiKeysCollection({ ...baseOptions, userCollection: 'admins' })
-    const userField = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'user' }> => 'name' in f && f.name === 'user',
-    )
+    const userField = findNamed(collection.fields as Field[], 'user') as { relationTo?: string }
     expect(userField).toBeDefined()
-    expect((userField as { relationTo: string }).relationTo).toBe('admins')
+    expect(userField.relationTo).toBe('admins')
   })
 
   it('throws a useful error when userCollection is missing', () => {
@@ -62,10 +72,6 @@ describe('createApiKeysCollection', () => {
 
   it('declares the typed scope surface and lifecycle fields', () => {
     const collection = createApiKeysCollection(baseOptions)
-    const fieldNames = collection.fields
-      .map((f) => ('name' in f ? f.name : null))
-      .filter((n): n is string => typeof n === 'string')
-
     for (const expected of [
       'name',
       'description',
@@ -79,16 +85,15 @@ describe('createApiKeysCollection', () => {
       'revokedAt',
       'lastUsedAt',
     ]) {
-      expect(fieldNames, `missing field: ${expected}`).toContain(expected)
+      expect(findNamed(collection.fields as Field[], expected), `missing field: ${expected}`).toBeDefined()
     }
-    expect(fieldNames).not.toContain('scopes')
+    // Legacy column must be gone.
+    expect(findNamed(collection.fields as Field[], 'scopes')).toBeUndefined()
   })
 
   it('exposes the four preset values with custom as the default', () => {
     const collection = createApiKeysCollection(baseOptions)
-    const preset = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'preset' }> => 'name' in f && f.name === 'preset',
-    ) as {
+    const preset = findNamed(collection.fields as Field[], 'preset') as {
       required?: boolean
       defaultValue?: string
       options?: Array<{ value: string }>
@@ -103,55 +108,62 @@ describe('createApiKeysCollection', () => {
     ])
   })
 
-  it('populates collectionScopes options from availableCollections', () => {
-    const collection = createApiKeysCollection({ ...baseOptions, availableCollections: ['a', 'b', 'c'] })
-    const scopes = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'collectionScopes' }> =>
-        'name' in f && f.name === 'collectionScopes',
-    ) as { fields: Array<{ name: string; options?: Array<{ value: string }> }> }
-    const collectionField = scopes.fields.find((f) => f.name === 'collection')
-    expect(collectionField?.options?.map((o) => o.value)).toEqual(['a', 'b', 'c'])
+  it('renders collectionScopes as a JSON field with the matrix component and runtime options', () => {
+    const collection = createApiKeysCollection({
+      ...baseOptions,
+      availableCollections: ['a', 'b', 'c'],
+    })
+    const scopes = findNamed(collection.fields as Field[], 'collectionScopes') as {
+      type?: string
+      admin?: {
+        components?: { Field?: string }
+        custom?: { availableCollections?: string[] }
+        condition?: (data: unknown) => boolean
+      }
+    }
+    expect(scopes.type).toBe('json')
+    expect(scopes.admin?.components?.Field).toBe(
+      'payload-mcp-toolkit/client#CollectionScopesMatrix',
+    )
+    expect(scopes.admin?.custom?.availableCollections).toEqual(['a', 'b', 'c'])
+    expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
   })
 
-  it('hides collectionScopes / toolAllow when preset is not custom', () => {
+  it('groups tool overrides into a custom-only collapsible', () => {
     const collection = createApiKeysCollection(baseOptions)
-    type WithCondition = { admin?: { condition?: (data: unknown) => boolean } }
+    const collapsible = (collection.fields as Field[]).find(
+      (f) => f.type === 'collapsible' && f.label === 'Tool overrides',
+    ) as { admin?: { condition?: (data: unknown) => boolean }; fields?: Field[] } | undefined
+    expect(collapsible).toBeDefined()
+    expect(collapsible?.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(collapsible?.admin?.condition?.({ preset: 'admin' })).toBe(false)
 
-    const collScopes = collection.fields.find(
-      (f) => 'name' in f && f.name === 'collectionScopes',
-    ) as WithCondition
-    const toolAllow = collection.fields.find(
+    const toolAllow = (collapsible?.fields ?? []).find(
       (f) => 'name' in f && f.name === 'toolAllow',
-    ) as WithCondition
-    const toolDeny = collection.fields.find(
+    ) as { options?: Array<{ value: string }> } | undefined
+    const toolDeny = (collapsible?.fields ?? []).find(
       (f) => 'name' in f && f.name === 'toolDeny',
-    ) as WithCondition
-
-    expect(collScopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
-    expect(collScopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
-    expect(toolAllow.admin?.condition?.({ preset: 'custom' })).toBe(true)
-    expect(toolAllow.admin?.condition?.({ preset: 'admin' })).toBe(false)
-    // toolDeny applies on top of any preset; no condition expected
-    expect(toolDeny.admin?.condition).toBeUndefined()
+    ) as { options?: Array<{ value: string }> } | undefined
+    expect(toolAllow?.options?.map((o) => o.value)).toEqual(baseOptions.availableTools)
+    expect(toolDeny?.options?.map((o) => o.value)).toEqual(baseOptions.availableTools)
   })
 
-  it('populates toolAllow / toolDeny options from availableTools', () => {
-    const collection = createApiKeysCollection({ ...baseOptions, availableTools: ['x', 'y'] })
-    const toolAllow = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'toolAllow' }> => 'name' in f && f.name === 'toolAllow',
-    ) as { options?: Array<{ value: string }> }
-    const toolDeny = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'toolDeny' }> => 'name' in f && f.name === 'toolDeny',
-    ) as { options?: Array<{ value: string }> }
-    expect(toolAllow.options?.map((o) => o.value)).toEqual(['x', 'y'])
-    expect(toolDeny.options?.map((o) => o.value)).toEqual(['x', 'y'])
+  it('places identity and lifecycle fields in the sidebar', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    for (const expected of ['user', 'keyPrefix', 'expiresAt', 'revokedAt', 'lastUsedAt']) {
+      const f = findNamed(collection.fields as Field[], expected) as {
+        admin?: { position?: string }
+      }
+      expect(f.admin?.position, `${expected} should be in the sidebar`).toBe('sidebar')
+    }
   })
 
   it('keyPrefix beforeChange captures first 8 chars of a freshly generated apiKey', () => {
     const collection = createApiKeysCollection(baseOptions)
-    const prefixField = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'keyPrefix' }> => 'name' in f && f.name === 'keyPrefix',
-    ) as { hooks?: { beforeChange?: Array<(args: unknown) => unknown> } }
+    const prefixField = findNamed(collection.fields as Field[], 'keyPrefix') as {
+      hooks?: { beforeChange?: Array<(args: unknown) => unknown> }
+    }
 
     const hook = prefixField.hooks?.beforeChange?.[0]
     expect(hook).toBeDefined()
@@ -166,9 +178,9 @@ describe('createApiKeysCollection', () => {
 
   it('keyPrefix beforeChange preserves an existing prefix when the apiKey is not present (e.g. updates)', () => {
     const collection = createApiKeysCollection(baseOptions)
-    const prefixField = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'keyPrefix' }> => 'name' in f && f.name === 'keyPrefix',
-    ) as { hooks?: { beforeChange?: Array<(args: unknown) => unknown> } }
+    const prefixField = findNamed(collection.fields as Field[], 'keyPrefix') as {
+      hooks?: { beforeChange?: Array<(args: unknown) => unknown> }
+    }
     const hook = prefixField.hooks!.beforeChange![0]
 
     const result = hook({
@@ -181,9 +193,9 @@ describe('createApiKeysCollection', () => {
 
   it('keyPrefix beforeChange respects a value already provided', () => {
     const collection = createApiKeysCollection(baseOptions)
-    const prefixField = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'keyPrefix' }> => 'name' in f && f.name === 'keyPrefix',
-    ) as { hooks?: { beforeChange?: Array<(args: unknown) => unknown> } }
+    const prefixField = findNamed(collection.fields as Field[], 'keyPrefix') as {
+      hooks?: { beforeChange?: Array<(args: unknown) => unknown> }
+    }
     const hook = prefixField.hooks!.beforeChange![0]
 
     const result = hook({
