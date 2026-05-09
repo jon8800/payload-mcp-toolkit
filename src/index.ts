@@ -155,9 +155,21 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       resources: resources as never,
     })
 
-    // Attach API-keys collection.
+    // Attach API-keys collection. Available collections / tools are
+    // snapshotted now so the admin UI's scope dropdowns reflect the host
+    // config at boot time. Adding a collection requires a dev restart for
+    // it to surface as a scope option.
     const userCollection = resolveUserCollection(options, incomingConfig)
-    const apiKeysCollection = createApiKeysCollection({ slug: apiKeysSlug, userCollection })
+    const availableCollections = collections
+      .map((c) => c.slug)
+      .filter((s) => s !== apiKeysSlug)
+    const availableTools = tools.map((t) => t.name)
+    const apiKeysCollection = createApiKeysCollection({
+      slug: apiKeysSlug,
+      userCollection,
+      availableCollections,
+      availableTools,
+    })
     const updatedCollections: CollectionConfig[] = [...collections, apiKeysCollection]
 
     // Attach the bearer strategy to the user collection's auth config.
