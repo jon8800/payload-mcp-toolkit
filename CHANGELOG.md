@@ -16,6 +16,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   `KeyScopes` shape consumed by the dispatch path is unchanged — typed fields
   are composed into it at auth time.
 
+### Fixed
+- **Custom preset with no overrides now denies everything.** A regression
+  introduced earlier in this cycle made freshly-created keys (which default
+  to `preset: custom`) authenticate at full access until overrides were
+  added — the inverse of the intended fail-closed default. `composeScopes`
+  now emits an explicit deny-all shape (`{ collections: {}, tools: { allow:
+  [] } }`) for empty-overrides custom keys; partial-override custom keys
+  are unchanged. Caught by Codex review.
+
 ### Removed
 - **Legacy `scopes` JSON column.** Dropped outright (no transitional release).
   Existing v0.4.0 rows authenticate but carry no scopes (= full access) until
@@ -24,6 +33,15 @@ adheres to [Semantic Versioning](https://semver.org/).
   on-first-lookup translator and the hidden `mcpAccessSettings` column are
   gone. v0.3.x rows authenticate but carry no scopes — re-scope them from
   the admin UI.
+
+### Known limitations
+- **Browser MCP clients are not yet supported end-to-end.** The
+  `auth.allowedOrigins` option restricts which origins may call `/api/mcp`,
+  but the endpoint does not yet emit CORS response headers or handle the
+  `OPTIONS` preflight that browsers send before authenticated cross-origin
+  POSTs. Server-to-server callers (backend scripts, Claude Desktop's local
+  connector) are unaffected. Browser support will land in a follow-up
+  release once there's a concrete client to validate against.
 
 ## [0.4.0] - 2026-05-05
 

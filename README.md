@@ -117,7 +117,7 @@ Every option is an escape hatch — pass only what you need:
 ```ts
 contentToolkitPlugin({
   auth: {
-    allowedOrigins: ['https://app.example.com'],   // browser MCP clients only; defaults to no-CORS
+    allowedOrigins: ['https://app.example.com'],   // origin allow-list for the /api/mcp Origin/Host check; browser preflight not yet handled — see Known limitations
   },
   apiKeyCollection: {
     slug: 'mcp-keys',                              // default 'payload-mcp-api-keys'
@@ -144,7 +144,7 @@ contentToolkitPlugin({
 
 | Option | Description |
 |---|---|
-| `auth.allowedOrigins` | Origins permitted on the `Origin` header. Empty / unset means server-to-server only (no browsers). `*` is intentionally not honoured. |
+| `auth.allowedOrigins` | Origins permitted on the `Origin` header for the DNS-rebinding check. Empty / unset means server-to-server only. `*` is intentionally not honoured. **Note:** browser MCP clients are not yet fully supported — the endpoint does not emit CORS response headers or handle the `OPTIONS` preflight. See [Known limitations](#known-limitations). |
 | `apiKeyCollection.slug` | API-keys collection slug. Defaults to `payload-mcp-api-keys` for zero-touch upgrade compatibility. |
 | `apiKeyCollection.userCollection` | User collection that API keys link to. Defaults to `userCollection` / `admin.user`. |
 | `preview.siteUrl` | Base URL for preview links. Defaults to `serverURL`, then `NEXT_PUBLIC_SERVER_URL`/`SITE_URL` env vars. |
@@ -173,9 +173,13 @@ v0.3.x wrapped `@payloadcms/plugin-mcp`. v0.4 owns the small remaining surface (
    ```
 3. **Existing API keys keep authenticating zero-touch.** The `payload-mcp-api-keys` slug, `apiKey` / `apiKeyIndex` columns, and HMAC formula are all preserved.
 4. **Re-scope each key** — see the [API keys](#api-keys) section. Open each existing key in admin, pick a preset (or **Custom** with explicit collection / tool overrides), and save. Until you do, keys carry no scopes and authenticate at full access.
-5. **CORS defaults to no-browsers.** If you have a browser-based MCP client, set `auth.allowedOrigins`. Server-to-server callers (no `Origin` header) are always allowed and require no opt-in.
+5. **Browser MCP clients are not yet fully supported.** Server-to-server callers (no `Origin` header — backend scripts, Claude Desktop's local connector) work as before and require no opt-in. Browser-based clients additionally need CORS response headers and `OPTIONS` preflight handling, which haven't landed yet — see [Known limitations](#known-limitations).
 
 If you forget step 1, the plugin throws on boot with the same message — it refuses to register two MCP plugins racing for the `payload-mcp-api-keys` slug.
+
+## Known limitations
+
+- **Browser MCP clients are not yet fully supported.** The `/api/mcp` endpoint validates the `Origin` / `Host` headers (DNS-rebinding protection) and the `auth.allowedOrigins` option restricts which origins may call it, but the endpoint does not yet emit CORS response headers (`Access-Control-Allow-Origin` etc.) or handle the `OPTIONS` preflight request that browsers send before authenticated cross-origin POSTs. Server-to-server callers (backend scripts, Claude Desktop's local connector — no `Origin` header) are unaffected. Full browser-client support will land in a follow-up release once there is a concrete client to validate against; until then, treat `auth.allowedOrigins` as a server-side allow-list, not a browser opt-in.
 
 ## Development
 
