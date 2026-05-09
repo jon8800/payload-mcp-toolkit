@@ -18,16 +18,10 @@ interface RowValue {
 }
 type MatrixValue = RowValue[]
 
-interface FieldCustom {
-  availableCollections?: string[]
-}
-interface FieldConfig {
-  custom?: FieldCustom
-}
-
 export interface CollectionScopesMatrixProps {
   path: string
-  field?: FieldConfig
+  /** Forwarded via `clientProps` from `api-keys.ts`. */
+  availableCollections?: string[]
 }
 
 function rowsToMap(value: MatrixValue | null | undefined): Map<string, Set<Action>> {
@@ -64,7 +58,9 @@ function mapToRows(map: Map<string, Set<Action>>, allCollections: string[]): Mat
 
 function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.ReactElement {
   const { value, setValue } = useField<MatrixValue>({ path: props.path, hasRows: false })
-  const collections: string[] = props.field?.custom?.availableCollections ?? []
+  const collections: string[] = Array.isArray(props.availableCollections)
+    ? props.availableCollections
+    : []
 
   const map = React.useMemo(() => rowsToMap(value), [value])
 

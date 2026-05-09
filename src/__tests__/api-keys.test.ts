@@ -116,16 +116,24 @@ describe('createApiKeysCollection', () => {
     const scopes = findNamed(collection.fields as Field[], 'collectionScopes') as {
       type?: string
       admin?: {
-        components?: { Field?: string }
-        custom?: { availableCollections?: string[] }
+        components?: {
+          Field?: {
+            path?: string
+            exportName?: string
+            clientProps?: { availableCollections?: string[] }
+          }
+        }
         condition?: (data: unknown) => boolean
       }
     }
     expect(scopes.type).toBe('json')
-    expect(scopes.admin?.components?.Field).toBe(
-      'payload-mcp-toolkit/client#CollectionScopesMatrix',
-    )
-    expect(scopes.admin?.custom?.availableCollections).toEqual(['a', 'b', 'c'])
+    expect(scopes.admin?.components?.Field?.path).toBe('payload-mcp-toolkit/client')
+    expect(scopes.admin?.components?.Field?.exportName).toBe('CollectionScopesMatrix')
+    expect(scopes.admin?.components?.Field?.clientProps?.availableCollections).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
     expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
     expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
   })

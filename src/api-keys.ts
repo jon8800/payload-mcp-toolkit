@@ -87,16 +87,23 @@ export function createApiKeysCollection(
   // The default Payload UI for an `array` would force users to add rows
   // one at a time; the custom matrix component renders all available
   // collections at once with a checkbox grid (rows × actions).
+  //
+  // `availableCollections` is forwarded via `clientProps` — Payload v3's
+  // sanctioned escape hatch for serializable static data that the client
+  // component needs at render time.
   const collectionScopesField: Field = {
     name: 'collectionScopes',
     type: 'json',
     admin: {
       condition: isCustomPreset,
       components: {
-        Field: 'payload-mcp-toolkit/client#CollectionScopesMatrix',
-      },
-      custom: {
-        availableCollections: options.availableCollections,
+        Field: {
+          path: 'payload-mcp-toolkit/client',
+          exportName: 'CollectionScopesMatrix',
+          clientProps: {
+            availableCollections: options.availableCollections,
+          },
+        },
       },
     },
   }
