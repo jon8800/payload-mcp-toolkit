@@ -51,20 +51,9 @@ describe('createApiKeysCollection', () => {
       'expiresAt',
       'revokedAt',
       'lastUsedAt',
-      'mcpAccessSettings',
     ]) {
       expect(fieldNames, `missing field: ${expected}`).toContain(expected)
     }
-  })
-
-  it('keeps mcpAccessSettings hidden so legacy rows can be lazily translated', () => {
-    const collection = createApiKeysCollection({ userCollection: 'users' })
-    const legacy = collection.fields.find(
-      (f): f is Extract<typeof f, { name: 'mcpAccessSettings' }> =>
-        'name' in f && f.name === 'mcpAccessSettings',
-    )
-    expect(legacy).toBeDefined()
-    expect((legacy as { admin?: { hidden?: boolean } }).admin?.hidden).toBe(true)
   })
 
   it('keyPrefix beforeChange captures first 8 chars of a freshly generated apiKey', () => {

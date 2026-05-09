@@ -24,8 +24,6 @@ export interface CreateApiKeysCollectionOptions {
  *   - `scopes` (json): per-key authorization (preset + collection/tool overrides)
  *   - `expiresAt`, `revokedAt`, `lastUsedAt`: lifecycle fields
  *   - `keyPrefix`: human-readable key id surfaced in audit logs
- *   - `mcpAccessSettings` (hidden): legacy column retained for one-time lazy
- *     translation into `scopes` on first authenticated request.
  */
 export function createApiKeysCollection(
   options: CreateApiKeysCollectionOptions,
@@ -127,15 +125,6 @@ export function createApiKeysCollection(
         admin: {
           readOnly: true,
           description: 'Updated on each successful authentication. Fire-and-forget; not on the request hot path.',
-        },
-      },
-      {
-        name: 'mcpAccessSettings',
-        type: 'json',
-        admin: {
-          hidden: true,
-          description:
-            'Legacy v0.3.x access tree. Preserved on existing rows and lazily translated to `scopes` on first authenticated request. Drop in v0.5.',
         },
       },
     ],

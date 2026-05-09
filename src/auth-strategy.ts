@@ -16,60 +16,6 @@ export interface KeyScopes {
   tools?: { allow?: string[]; deny?: string[] }
 }
 
-/**
- * Pure function: translates v0.3.x's dynamic `mcpAccessSettings` field tree
- * into a v0.4 `scopes` JSON object.
- *
- * The legacy shape stores per-collection toggles like:
- *   { posts: { find: true, create: true, update: false, delete: false }, ... }
- *
- * Plus a `payload-mcp-tool` group of per-tool checkboxes.
- *
- * Translation rules:
- *   - Each `find` flag -> 'read'; `create`/`update`/`delete` map identically.
- *   - The `payload-mcp-tool` group becomes `tools.allow` (only enabled tools).
- *   - Unrecognized or malformed entries are skipped silently — we never
- *     reject auth on translator failure (that's worse UX than over-broad
- *     access surfaced as a logged warning).
- */
-export function translateLegacyScopes(legacy: unknown): KeyScopes | null {
-  if (!legacy || typeof legacy !== 'object') return null
-
-  const collections: Record<string, CollectionAction[]> = {}
-  let toolsAllow: string[] | undefined
-
-  for (const [key, value] of Object.entries(legacy as Record<string, unknown>)) {
-    if (key === 'payload-mcp-tool') {
-      if (value && typeof value === 'object') {
-        const enabled = Object.entries(value as Record<string, unknown>)
-          .filter(([, on]) => on === true)
-          .map(([name]) => name)
-        if (enabled.length > 0) toolsAllow = enabled
-      }
-      continue
-    }
-
-    if (key === 'payload-mcp-resource' || key === 'payload-mcp-prompt') continue
-
-    if (!value || typeof value !== 'object') continue
-    const flags = value as Record<string, unknown>
-    const actions: CollectionAction[] = []
-    if (flags.find === true) actions.push('read')
-    if (flags.create === true) actions.push('create')
-    if (flags.update === true) actions.push('update')
-    if (flags.delete === true) actions.push('delete')
-    if (actions.length > 0) collections[key] = actions
-  }
-
-  const hasCollections = Object.keys(collections).length > 0
-  if (!hasCollections && !toolsAllow) return null
-
-  const scopes: KeyScopes = {}
-  if (hasCollections) scopes.collections = collections
-  if (toolsAllow) scopes.tools = { allow: toolsAllow }
-  return scopes
-}
-
 export interface CreateBearerStrategyOptions {
   /** Slug of the API-keys collection (defaults to `payload-mcp-api-keys`). */
   collectionSlug: string
@@ -81,7 +27,6 @@ interface ApiKeyRow {
   id: string | number
   user: unknown
   scopes?: KeyScopes | null
-  mcpAccessSettings?: unknown
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
   apiKey?: string | null
@@ -93,9 +38,8 @@ interface ApiKeyRow {
  *
  * Authenticates `Authorization: Bearer <plaintext>` by computing the
  * upstream-compatible `apiKeyIndex` HMAC and looking up the row. On match,
- * it lazily translates legacy `mcpAccessSettings` to `scopes` JSON, fires
- * a non-blocking `lastUsedAt` write, and hydrates `req.user` with the
- * linked user record + key context for downstream scope checks.
+ * it fires a non-blocking `lastUsedAt` write and hydrates `req.user` with
+ * the linked user record + key context for downstream scope checks.
  */
 export function createBearerStrategy(options: CreateBearerStrategyOptions): AuthStrategy {
   const { collectionSlug, userCollection } = options
@@ -148,34 +92,8 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       const linkedUser = row.user
       if (!linkedUser || typeof linkedUser !== 'object') return { user: null }
 
-      let effectiveScopes: KeyScopes | null = (row.scopes as KeyScopes | null | undefined) ?? null
-      if (!effectiveScopes && row.mcpAccessSettings) {
-        try {
-          const translated = translateLegacyScopes(row.mcpAccessSettings)
-          if (translated) {
-            effectiveScopes = translated
-            // Persist the translation so subsequent lookups skip this branch.
-            void payload
-              .update({
-                collection: collectionSlug,
-                id: row.id,
-                data: { scopes: translated } as Record<string, unknown>,
-                overrideAccess: true,
-              })
-              .catch((err: unknown) => {
-                payload.logger.warn(
-                  { err, keyId: row.id, event: 'mcp.auth.scope_migration_failed' },
-                  '[payload-mcp-toolkit] Failed to persist translated scopes; continuing with in-memory translation',
-                )
-              })
-          }
-        } catch (err) {
-          payload.logger.warn(
-            { err, keyId: row.id, event: 'mcp.auth.scope_translate_failed' },
-            '[payload-mcp-toolkit] Could not translate legacy mcpAccessSettings; treating as full access',
-          )
-        }
-      }
+      const effectiveScopes: KeyScopes | null =
+        (row.scopes as KeyScopes | null | undefined) ?? null
 
       // Fire-and-forget: do not block the request on this write.
       void payload

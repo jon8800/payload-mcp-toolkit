@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   createBearerStrategy,
-  translateLegacyScopes,
   AUTH_STRATEGY_NAME,
   getApiKeyContext,
 } from '../auth-strategy'
@@ -42,59 +41,6 @@ function makeHeaders(token: string | null): { get: (name: string) => string | nu
     },
   }
 }
-
-describe('translateLegacyScopes', () => {
-  it('returns null for empty / non-object input', () => {
-    expect(translateLegacyScopes(undefined)).toBeNull()
-    expect(translateLegacyScopes(null)).toBeNull()
-    expect(translateLegacyScopes('hi')).toBeNull()
-    expect(translateLegacyScopes({})).toBeNull()
-  })
-
-  it('translates per-collection find/create/update/delete flags', () => {
-    const out = translateLegacyScopes({
-      posts: { find: true, create: true, update: false, delete: false },
-      pages: { find: true, create: false, update: true, delete: true },
-    })
-    expect(out).toEqual({
-      collections: {
-        posts: ['read', 'create'],
-        pages: ['read', 'update', 'delete'],
-      },
-    })
-  })
-
-  it('translates payload-mcp-tool checkboxes into tools.allow', () => {
-    const out = translateLegacyScopes({
-      'payload-mcp-tool': { findDocument: true, deleteDocument: false, searchContent: true },
-    })
-    expect(out).toEqual({ tools: { allow: ['findDocument', 'searchContent'] } })
-  })
-
-  it('skips collections with no enabled actions', () => {
-    expect(
-      translateLegacyScopes({ posts: { find: false, create: false } }),
-    ).toBeNull()
-  })
-
-  it('ignores resource/prompt access groups (not modelled in scopes yet)', () => {
-    const out = translateLegacyScopes({
-      'payload-mcp-resource': { something: true },
-      'payload-mcp-prompt': { another: true },
-      posts: { find: true },
-    })
-    expect(out).toEqual({ collections: { posts: ['read'] } })
-  })
-
-  it('tolerates malformed entries silently', () => {
-    const out = translateLegacyScopes({
-      posts: 'broken',
-      pages: { find: 'yes', create: 1 },
-      blogs: { find: true },
-    })
-    expect(out).toEqual({ collections: { blogs: ['read'] } })
-  })
-})
 
 describe('createBearerStrategy.authenticate', () => {
   const strategy = createBearerStrategy({
@@ -215,34 +161,6 @@ describe('createBearerStrategy.authenticate', () => {
         data: expect.objectContaining({ lastUsedAt: expect.any(String) }),
       }),
     )
-  })
-
-  it('lazily translates legacy mcpAccessSettings when scopes is unset', async () => {
-    const payload = buildPayload({
-      rows: [
-        {
-          id: 'k2',
-          user: { id: 'u2' },
-          scopes: null,
-          mcpAccessSettings: {
-            posts: { find: true, create: true, update: false, delete: false },
-          },
-        },
-      ],
-    })
-    const result = await strategy.authenticate!({
-      headers: makeHeaders('plaintext-key') as unknown as Headers,
-      payload: payload as never,
-    } as never)
-    expect((result.user as { _mcpKey: { scopes: unknown } })._mcpKey.scopes).toEqual({
-      collections: { posts: ['read', 'create'] },
-    })
-    await new Promise((r) => setImmediate(r))
-    // Two updates fired: scope migration + lastUsedAt.
-    const scopeWrite = payload.updateMock.mock.calls.find(
-      ([arg]) => (arg as { data: Record<string, unknown> }).data.scopes,
-    )
-    expect(scopeWrite).toBeTruthy()
   })
 
   it('does not block auth if find() throws', async () => {
