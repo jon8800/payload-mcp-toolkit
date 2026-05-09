@@ -23,14 +23,88 @@ export interface CreateBearerStrategyOptions {
   userCollection: string
 }
 
+interface CollectionScopeRow {
+  collection?: unknown
+  actions?: unknown
+}
+
 interface ApiKeyRow {
   id: string | number
   user: unknown
+  /**
+   * Typed scope fields (v0.4.1+). Composed into KeyScopes by `composeScopes`
+   * when any are populated.
+   */
+  preset?: ScopePreset | 'custom' | null
+  collectionScopes?: CollectionScopeRow[] | null
+  toolAllow?: string[] | null
+  toolDeny?: string[] | null
+  /**
+   * Legacy v0.4.0 JSON column. Used only when none of the typed fields above
+   * are populated. Drops next release.
+   */
   scopes?: KeyScopes | null
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
   apiKey?: string | null
   keyPrefix?: string | null
+}
+
+const VALID_ACTIONS: ReadonlySet<CollectionAction> = new Set(['read', 'create', 'update', 'delete'])
+
+/**
+ * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`.
+ *
+ * Resolution order:
+ *   1. If any typed field (`preset`, `collectionScopes`, `toolAllow`,
+ *      `toolDeny`) is populated, build from those — legacy `scopes` is
+ *      ignored.
+ *   2. Else fall back to the legacy `scopes` JSON column.
+ *   3. Else null (full access — back-compat for unscoped keys).
+ *
+ * Note: a `preset` value of `'custom'` is a UI sentinel meaning "use my
+ * override fields" — it does NOT become `KeyScopes.preset`.
+ */
+export function composeScopes(row: ApiKeyRow): KeyScopes | null {
+  const presetRaw = row.preset
+  const hasPreset = typeof presetRaw === 'string' && presetRaw.length > 0
+  const collectionScopes = Array.isArray(row.collectionScopes) ? row.collectionScopes : []
+  const hasCollectionScopes = collectionScopes.length > 0
+  const toolAllow = Array.isArray(row.toolAllow) ? row.toolAllow.filter((t) => typeof t === 'string') : []
+  const toolDeny = Array.isArray(row.toolDeny) ? row.toolDeny.filter((t) => typeof t === 'string') : []
+  const hasToolAllow = toolAllow.length > 0
+  const hasToolDeny = toolDeny.length > 0
+
+  const anyTypedField = hasPreset || hasCollectionScopes || hasToolAllow || hasToolDeny
+  if (!anyTypedField) {
+    return (row.scopes as KeyScopes | null | undefined) ?? null
+  }
+
+  const out: KeyScopes = {}
+  if (hasPreset && presetRaw !== 'custom') {
+    out.preset = presetRaw as ScopePreset
+  }
+  if (hasCollectionScopes) {
+    const collections: Record<string, CollectionAction[]> = {}
+    for (const entry of collectionScopes) {
+      const slug = typeof entry?.collection === 'string' ? entry.collection : null
+      if (!slug) continue
+      const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
+      const actions = rawActions.filter(
+        (a): a is CollectionAction => typeof a === 'string' && VALID_ACTIONS.has(a as CollectionAction),
+      )
+      collections[slug] = actions
+    }
+    if (Object.keys(collections).length > 0) {
+      out.collections = collections
+    }
+  }
+  if (hasToolAllow || hasToolDeny) {
+    out.tools = {}
+    if (hasToolAllow) out.tools.allow = toolAllow
+    if (hasToolDeny) out.tools.deny = toolDeny
+  }
+  return out
 }
 
 /**
@@ -92,8 +166,7 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       const linkedUser = row.user
       if (!linkedUser || typeof linkedUser !== 'object') return { user: null }
 
-      const effectiveScopes: KeyScopes | null =
-        (row.scopes as KeyScopes | null | undefined) ?? null
+      const effectiveScopes: KeyScopes | null = composeScopes(row)
 
       // Fire-and-forget: do not block the request on this write.
       void payload

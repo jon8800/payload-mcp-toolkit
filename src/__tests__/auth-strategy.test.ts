@@ -3,6 +3,7 @@ import {
   createBearerStrategy,
   AUTH_STRATEGY_NAME,
   getApiKeyContext,
+  composeScopes,
 } from '../auth-strategy'
 import { hashKey } from '../hash'
 
@@ -41,6 +42,76 @@ function makeHeaders(token: string | null): { get: (name: string) => string | nu
     },
   }
 }
+
+describe('composeScopes', () => {
+  const baseRow = { id: 'k', user: { id: 'u' } }
+
+  it('returns null when no typed fields and no legacy scopes are populated', () => {
+    expect(composeScopes({ ...baseRow })).toBeNull()
+    expect(composeScopes({ ...baseRow, scopes: null })).toBeNull()
+  })
+
+  it('falls back to legacy scopes JSON when no typed fields are present', () => {
+    const legacy = { preset: 'editor' as const, collections: { posts: ['read' as const] } }
+    expect(composeScopes({ ...baseRow, scopes: legacy })).toEqual(legacy)
+  })
+
+  it('builds KeyScopes from typed fields when populated, ignoring legacy scopes', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'editor',
+      toolDeny: ['safeDelete'],
+      // Legacy column is intentionally also set; should be ignored.
+      scopes: { preset: 'admin' },
+    })
+    expect(out).toEqual({
+      preset: 'editor',
+      tools: { deny: ['safeDelete'] },
+    })
+  })
+
+  it('treats preset === "custom" as a UI sentinel and drops it from KeyScopes', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: [{ collection: 'posts', actions: ['read', 'create'] }],
+    })
+    expect(out).toEqual({
+      collections: { posts: ['read', 'create'] },
+    })
+  })
+
+  it('preserves an empty actions array as explicit-deny-all on a listed collection', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: [{ collection: 'posts', actions: [] }],
+    })
+    expect(out).toEqual({ collections: { posts: [] } })
+  })
+
+  it('filters invalid action values out of collectionScopes', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: [
+        { collection: 'posts', actions: ['read', 'bogus', 1, 'update'] as unknown as string[] },
+      ],
+    })
+    expect(out).toEqual({ collections: { posts: ['read', 'update'] } })
+  })
+
+  it('combines toolAllow and toolDeny into tools.allow / tools.deny', () => {
+    const out = composeScopes({
+      ...baseRow,
+      toolAllow: ['findDocument', 'searchContent'],
+      toolDeny: ['deleteDocument'],
+    })
+    expect(out).toEqual({
+      tools: { allow: ['findDocument', 'searchContent'], deny: ['deleteDocument'] },
+    })
+  })
+})
 
 describe('createBearerStrategy.authenticate', () => {
   const strategy = createBearerStrategy({
@@ -161,6 +232,29 @@ describe('createBearerStrategy.authenticate', () => {
         data: expect.objectContaining({ lastUsedAt: expect.any(String) }),
       }),
     )
+  })
+
+  it('hydrates _mcpKey.scopes from typed fields when present, ignoring legacy scopes', async () => {
+    const payload = buildPayload({
+      rows: [
+        {
+          id: 'k3',
+          user: { id: 'u3' },
+          keyPrefix: 'deadbeef',
+          preset: 'editor',
+          toolDeny: ['safeDelete'],
+          scopes: { preset: 'admin' }, // legacy column ignored when typed fields are populated
+        },
+      ],
+    })
+    const result = await strategy.authenticate!({
+      headers: makeHeaders('plaintext-key') as unknown as Headers,
+      payload: payload as never,
+    } as never)
+    expect((result.user as { _mcpKey: { scopes: unknown } })._mcpKey.scopes).toEqual({
+      preset: 'editor',
+      tools: { deny: ['safeDelete'] },
+    })
   })
 
   it('does not block auth if find() throws', async () => {
