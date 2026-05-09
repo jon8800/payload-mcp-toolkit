@@ -4,6 +4,29 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **API-key scopes are now configured via typed admin fields.** The freehand
+  `scopes` JSON textarea is replaced by `preset` (Read-only / Editor / Admin /
+  Custom), `collectionScopes` (per-collection action whitelist, custom only),
+  `toolAllow` (tool whitelist, custom only), and `toolDeny` (deny-list, always
+  applied). Collection and tool dropdowns are populated at plugin-init time
+  from the host Payload config and the registered tool list. The runtime
+  `KeyScopes` shape consumed by the dispatch path is unchanged — typed fields
+  are composed into it at auth time.
+- The `scopes` JSON column is retained read-only and hidden for one release
+  for back-compat with v0.4.0 rows. New keys ignore it; existing rows that
+  still hold a `scopes` JSON object continue to authenticate. The column will
+  be dropped in the release after this one.
+
+### Removed
+- **Legacy `mcpAccessSettings` lazy migration.** The v0.3.x → v0.4
+  on-first-lookup translator and the hidden `mcpAccessSettings` column are
+  gone. v0.3.x rows that were never authenticated against v0.4.0 will
+  authenticate but carry no scopes (= full access) — re-scope them from the
+  admin UI.
+
 ## [0.4.0] - 2026-05-05
 
 ### Added

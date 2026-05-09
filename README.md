@@ -56,24 +56,18 @@ Content-Type: application/json
 
 ### Scopes
 
-Each key carries an optional `scopes` JSON field that controls what tools and collections it can hit. Leave `scopes` unset for full access (back-compat).
+Configure each key's permissions through typed admin fields — no JSON to hand-edit.
 
-| Field | Shape | Effect |
-|---|---|---|
-| `preset` | `'read-only' \| 'editor' \| 'admin'` | Quick role. `read-only` allows `read`; `editor` allows `read+create+update` and denies `safeDelete`/`deleteDocument`; `admin` allows all actions. |
-| `collections` | `{ [slug]: ('read' \| 'create' \| 'update' \| 'delete')[] }` | Per-collection override. Replaces the preset's action set for that slug. |
-| `tools.allow` | `string[]` | Tools the key may call (whitelist). |
-| `tools.deny` | `string[]` | Tools the key may not call (blacklist). |
+| Field | Effect |
+|---|---|
+| `preset` | Role preset: **Read-only**, **Editor** (read + create + update; denies `safeDelete` / `deleteDocument`), **Admin** (all actions), or **Custom** (use the override fields below). Required. Defaults to **Custom** so new keys deny everything until explicitly scoped. |
+| `collectionScopes` | Array of `{ collection, actions[] }`. Only honoured when preset is **Custom**. Each row whitelists a collection and the actions allowed on it. An empty `actions[]` denies all actions on that collection. Listed collections are a *whitelist* — collections not in the list are denied. |
+| `toolAllow` | Multi-select. Only honoured when preset is **Custom**. If set, only these tools are callable with this key. |
+| `toolDeny` | Multi-select. Always applied on top of any preset. Tools listed here are blocked regardless of preset / collection scopes. |
 
-Example scopes JSON:
+The collection and tool dropdowns are populated at plugin-init time from your live Payload config + the toolkit's registered tools. Adding a collection or custom tool requires a dev-server / app restart for it to surface in the dropdowns.
 
-```json
-{
-  "preset": "editor",
-  "collections": { "posts": ["read", "update"] },
-  "tools": { "deny": ["uploadMedia"] }
-}
-```
+The same shape is editable programmatically via Payload's REST and GraphQL APIs against the `payload-mcp-api-keys` collection — useful for seeding keys from CI or scripted provisioning.
 
 ### Lifecycle fields
 
@@ -177,8 +171,8 @@ v0.3.x wrapped `@payloadcms/plugin-mcp`. v0.4 owns the small remaining surface (
    ```bash
    pnpm remove @payloadcms/plugin-mcp
    ```
-3. **Existing API keys keep working zero-touch.** The `payload-mcp-api-keys` slug, `apiKey` / `apiKeyIndex` columns, and HMAC formula are all preserved. The first authenticated request from each existing key migrates its old `mcpAccessSettings` tree into the new `scopes` JSON column transparently.
-4. **New scopes shape** — see the [API keys](#api-keys) section. Existing keys get their per-collection `find`/`create`/`update`/`delete` flags translated to `read`/`create`/`update`/`delete` action arrays, and any enabled `payload-mcp-tool` checkboxes become `tools.allow`. Keys with no v0.3 access settings stay at full access.
+3. **Existing API keys keep authenticating zero-touch.** The `payload-mcp-api-keys` slug, `apiKey` / `apiKeyIndex` columns, and HMAC formula are all preserved.
+4. **Re-scope each key** — see the [API keys](#api-keys) section. Open each existing key in admin, pick a preset (or **Custom** with explicit collection / tool overrides), and save. Until you do, keys carry no scopes and authenticate at full access.
 5. **CORS defaults to no-browsers.** If you have a browser-based MCP client, set `auth.allowedOrigins`. Server-to-server callers (no `Origin` header) are always allowed and require no opt-in.
 
 If you forget step 1, the plugin throws on boot with the same message — it refuses to register two MCP plugins racing for the `payload-mcp-api-keys` slug.
