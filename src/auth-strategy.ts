@@ -1,20 +1,10 @@
 import type { AuthStrategy, PayloadRequest, Where } from 'payload'
 import { extractBearerToken, hashKey } from './hash'
+import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
+
+export type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
 
 export const AUTH_STRATEGY_NAME = 'mcp-toolkit-bearer'
-
-/**
- * Shape of the v0.4 `scopes` field. All three sub-fields are optional;
- * an entirely-empty `scopes` (or null) grants full access for back-compat.
- */
-export type CollectionAction = 'read' | 'create' | 'update' | 'delete'
-export type ScopePreset = 'read-only' | 'editor' | 'admin'
-
-export interface KeyScopes {
-  preset?: ScopePreset
-  collections?: Record<string, CollectionAction[]>
-  tools?: { allow?: string[]; deny?: string[] }
-}
 
 export interface CreateBearerStrategyOptions {
   /** Slug of the API-keys collection (defaults to `payload-mcp-api-keys`). */

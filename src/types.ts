@@ -132,6 +132,14 @@ export interface CollectionSchema {
   searchableFields: string[]
 }
 
+/** Introspected global metadata. Globals are singletons — no relationships or searchable-fields graph. */
+export interface GlobalSchema {
+  slug: string
+  fields: FieldSchema[]
+  hasDrafts: boolean
+  hasLivePreview: boolean
+}
+
 /**
  * One block in the catalog. Flat — no section/leaf distinction. Whether a
  * block can nest other blocks is encoded in the `BlockNestingMap` keyed by
@@ -158,10 +166,10 @@ export interface BlockCatalog {
  * us pre-classifying anything as a "section" or "leaf".
  */
 export interface BlockNestingEdge {
-  /** Owner of the blocks field — either a collection slug or a block slug */
+  /** Owner of the blocks field — a collection slug, a block slug, or a global slug. */
   owner: string
-  /** Whether the owner is a collection or a block */
-  ownerType: 'collection' | 'block'
+  /** Whether the owner is a collection, a block, or a global */
+  ownerType: 'collection' | 'block' | 'global'
   /** Dotted path to the blocks field within the owner (e.g. `layout`, `hero.content`) */
   fieldPath: string
   /** Block slugs that this field accepts */
@@ -179,4 +187,29 @@ export interface RelationshipEdge {
   fieldName: string
   toCollection: string | string[]
   hasMany: boolean
+}
+
+// ─── Scope shapes ─────────────────────────────────────────────────────
+//
+// Canonical scope types live here so the auth strategy, registry, and admin
+// API-keys collection all import from the same surface. Globals support
+// only `read` / `update` — they don't have `create` / `delete` semantics.
+
+export type CollectionAction = 'read' | 'create' | 'update' | 'delete'
+export type GlobalAction = 'read' | 'update'
+export type ScopePreset = 'read-only' | 'editor' | 'admin'
+
+/**
+ * Runtime scope shape consumed by `registry.assertScopeAllows`.
+ *
+ * - `collections` / `globals` are whitelists when present: a resource not
+ *   listed there is denied for this key.
+ * - `tools.allow` / `tools.deny` are per-tool overrides that take precedence
+ *   over the preset / resource maps.
+ */
+export interface KeyScopes {
+  preset?: ScopePreset
+  collections?: Record<string, CollectionAction[]>
+  globals?: Record<string, GlobalAction[]>
+  tools?: { allow?: string[]; deny?: string[] }
 }

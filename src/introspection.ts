@@ -1,10 +1,12 @@
-import type { Block, CollectionConfig, Field } from 'payload'
+import type { Block, CollectionConfig, Field, GlobalConfig } from 'payload'
 import type {
   BlockCatalog,
+  BlockNestingEdge,
   BlockNestingMap,
   BlockSchema,
   CollectionSchema,
   FieldSchema,
+  GlobalSchema,
   RelationshipEdge,
 } from './types'
 
@@ -62,6 +64,52 @@ export function introspectCollections(
 }
 
 /**
+ * True if the global has Payload drafts enabled in its versions config.
+ * Mirrors `hasCollectionDrafts` — globals use the same `versions.drafts`
+ * shape as collections.
+ */
+export function hasGlobalDrafts(global: GlobalConfig): boolean {
+  const versions = global.versions
+  return (
+    typeof versions === 'object' &&
+    versions !== null &&
+    'drafts' in versions &&
+    Boolean(versions.drafts)
+  )
+}
+
+/**
+ * Introspect a Payload global config into structured metadata.
+ */
+export function introspectGlobal(global: GlobalConfig): GlobalSchema {
+  const fields = extractFields(global.fields)
+  const hasLivePreview = !!(
+    global.admin &&
+    typeof global.admin === 'object' &&
+    'livePreview' in global.admin &&
+    global.admin.livePreview
+  )
+
+  return {
+    slug: global.slug,
+    fields,
+    hasDrafts: hasGlobalDrafts(global),
+    hasLivePreview,
+  }
+}
+
+/**
+ * Introspect all globals into a map keyed by slug.
+ */
+export function introspectGlobals(globals: GlobalConfig[]): Map<string, GlobalSchema> {
+  const map = new Map<string, GlobalSchema>()
+  for (const global of globals) {
+    map.set(global.slug, introspectGlobal(global))
+  }
+  return map
+}
+
+/**
  * Build a flat catalog of every block in the schema. Whether a block can
  * nest other blocks is represented separately in the BlockNestingMap, not
  * as a section/leaf classification — the AI reads both and composes
@@ -85,9 +133,16 @@ export function introspectBlocks(blocks: Block[]): BlockCatalog {
  */
 export function buildBlockNestingMap(
   collections: CollectionConfig[],
-  blocks: Block[],
+  globalsOrBlocks: GlobalConfig[] | Block[],
+  blocks?: Block[],
 ): BlockNestingMap {
-  const knownSlugs = new Set(blocks.map((b) => b.slug))
+  // Back-compat overload: when called with two args, the second is `blocks`
+  // and there are no globals. The new shape is `(collections, globals, blocks)`.
+  const globals: GlobalConfig[] = blocks === undefined ? [] : (globalsOrBlocks as GlobalConfig[])
+  const effectiveBlocks: Block[] =
+    blocks === undefined ? (globalsOrBlocks as Block[]) : blocks
+
+  const knownSlugs = new Set(effectiveBlocks.map((b) => b.slug))
   const edges: BlockNestingMap = []
 
   for (const collection of collections) {
@@ -101,7 +156,18 @@ export function buildBlockNestingMap(
     )
   }
 
-  for (const block of blocks) {
+  for (const global of globals) {
+    edges.push(
+      ...collectBlocksFieldEdges(global.fields, {
+        owner: global.slug,
+        ownerType: 'global',
+        prefix: '',
+        knownSlugs,
+      }),
+    )
+  }
+
+  for (const block of effectiveBlocks) {
     edges.push(
       ...collectBlocksFieldEdges(block.fields, {
         owner: block.slug,
@@ -112,7 +178,31 @@ export function buildBlockNestingMap(
     )
   }
 
+  assertBlockNestingMapInvariant(edges)
   return edges
+}
+
+/**
+ * Guard against `(owner, fieldPath)` collisions across different `ownerType`
+ * values. Payload's own slug registry forbids collection/global slug
+ * collisions, but a defensive check here keeps the validator lookup in
+ * `patchLayout` / `patchGlobalLayout` unambiguous and surfaces config
+ * mistakes loudly instead of silently picking the first match.
+ */
+function assertBlockNestingMapInvariant(edges: BlockNestingMap): void {
+  const seen = new Map<string, BlockNestingEdge['ownerType']>()
+  for (const edge of edges) {
+    const key = `${edge.owner}.${edge.fieldPath}`
+    const prior = seen.get(key)
+    if (prior && prior !== edge.ownerType) {
+      throw new Error(
+        `[payload-mcp-toolkit] Block-nesting map invariant violated: ` +
+          `"${key}" appears as both "${prior}" and "${edge.ownerType}". ` +
+          `A collection and a global cannot share a slug; rename one.`,
+      )
+    }
+    seen.set(key, edge.ownerType)
+  }
 }
 
 /**
@@ -248,7 +338,7 @@ function extractRelationships(
 
 interface NestingScanContext {
   owner: string
-  ownerType: 'collection' | 'block'
+  ownerType: 'collection' | 'block' | 'global'
   prefix: string
   knownSlugs: Set<string>
 }
