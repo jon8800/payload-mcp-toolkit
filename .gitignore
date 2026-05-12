@@ -42,6 +42,10 @@ pnpm-debug.log*
 /dev/payload.db*
 /dev/sqlite.db*
 
+# Stray dev artifacts at repo root (screenshots, ad-hoc media)
+/admin-scopes-*.png
+/media/
+
 # Generated
 next-env.d.ts
 dev.db
