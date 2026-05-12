@@ -1,7 +1,7 @@
 ---
 title: "feat: Globals support across MCP surface"
 type: feat
-status: planned
+status: completed
 date: 2026-05-12
 deepened: 2026-05-12
 ---
