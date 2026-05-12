@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import {
+  ACCOUNT_LEVEL_TOOLS,
   assertScopeAllows,
+  assertScopeRegistryInvariant,
   createInitializeServer,
+  resolveResourceKind,
+  TOOL_TO_ACTION,
+  TOOL_TO_GLOBAL_ACTION,
   type ToolFactoryOutput,
 } from '../registry'
 
@@ -107,6 +112,176 @@ describe('assertScopeAllows', () => {
     expect(
       assertScopeAllows({ preset: 'read-only' }, 'searchContent', undefined).allowed,
     ).toBe(true)
+  })
+})
+
+// ─── Globals scope routing (U6) ──────────────────────────────────────
+
+describe('assertScopeAllows — globals', () => {
+  it('read-only preset allows findGlobal', () => {
+    expect(
+      assertScopeAllows({ preset: 'read-only' }, 'findGlobal', 'siteSettings').allowed,
+    ).toBe(true)
+  })
+
+  it('editor preset allows findGlobal (read still permitted on globals)', () => {
+    expect(
+      assertScopeAllows({ preset: 'editor' }, 'findGlobal', 'siteSettings').allowed,
+    ).toBe(true)
+  })
+
+  it('editor preset DENIES updateGlobal (asymmetric — global writes need admin)', () => {
+    const decision = assertScopeAllows({ preset: 'editor' }, 'updateGlobal', 'siteSettings')
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/global "siteSettings"/)
+    expect(decision.reason).toMatch(/preset/)
+  })
+
+  it('admin preset allows updateGlobal', () => {
+    expect(
+      assertScopeAllows({ preset: 'admin' }, 'updateGlobal', 'siteSettings').allowed,
+    ).toBe(true)
+  })
+
+  it('Custom override grants update via globals scope', () => {
+    expect(
+      assertScopeAllows(
+        { globals: { siteSettings: ['read', 'update'] } },
+        'updateGlobal',
+        'siteSettings',
+      ).allowed,
+    ).toBe(true)
+  })
+
+  it('Custom narrow denies update when only read is granted', () => {
+    const decision = assertScopeAllows(
+      { globals: { siteSettings: ['read'] } },
+      'updateGlobal',
+      'siteSettings',
+    )
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/Action "update" on global "siteSettings"/)
+  })
+
+  it('globals-only key denies a collection tool', () => {
+    const decision = assertScopeAllows(
+      { globals: { siteSettings: ['read', 'update'] } },
+      'findDocument',
+      'pages',
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('read-only preset denies updateGlobal', () => {
+    const decision = assertScopeAllows({ preset: 'read-only' }, 'updateGlobal', 'siteSettings')
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('globals whitelist: unlisted slug is denied', () => {
+    const decision = assertScopeAllows(
+      { globals: { siteSettings: ['read', 'update'] } },
+      'updateGlobal',
+      'footer',
+    )
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/Global "footer" is not in this API key's allowed globals/)
+  })
+})
+
+// ─── Fail-closed extensions for tools.allow without resource scope ───
+
+describe('assertScopeAllows — tools.allow-only fail-closed', () => {
+  it('denies updateGlobal when only tools.allow is set (no globals map, no preset)', () => {
+    const decision = assertScopeAllows(
+      { tools: { allow: ['updateGlobal'] } },
+      'updateGlobal',
+      'siteSettings',
+    )
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/explicit global scope or preset/)
+  })
+
+  it('denies updateDocument when only tools.allow is set (no collections map, no preset)', () => {
+    const decision = assertScopeAllows(
+      { tools: { allow: ['updateDocument'] } },
+      'updateDocument',
+      'pages',
+    )
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/explicit collection scope or preset/)
+  })
+
+  it('post-empty-Custom sentinel denies every dispatch path including globals', () => {
+    const denyAll = { collections: {}, globals: {}, tools: { allow: [] } }
+    expect(assertScopeAllows(denyAll, 'findGlobal', 'siteSettings').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'updateGlobal', 'siteSettings').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'findDocument', 'pages').allowed).toBe(false)
+    expect(assertScopeAllows(denyAll, 'searchContent', undefined).allowed).toBe(false)
+  })
+})
+
+// ─── Account-level routing ──────────────────────────────────────────
+
+describe('assertScopeAllows — account-level tools', () => {
+  it('searchContent allowed under read-only preset', () => {
+    expect(
+      assertScopeAllows({ preset: 'read-only' }, 'searchContent', undefined).allowed,
+    ).toBe(true)
+  })
+
+  it('uploadMedia denied under read-only preset (requires create)', () => {
+    expect(
+      assertScopeAllows({ preset: 'read-only' }, 'uploadMedia', undefined).allowed,
+    ).toBe(false)
+  })
+
+  it('unregistered tool name is denied with the registry-mapping reason', () => {
+    const decision = assertScopeAllows({ preset: 'admin' }, 'whatIsThisTool', undefined)
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toMatch(/no registered scope mapping/)
+  })
+})
+
+// ─── Registry invariant (boot-time guard) ────────────────────────────
+
+describe('assertScopeRegistryInvariant', () => {
+  it('passes for the production tool list (every registered tool is mapped)', () => {
+    const all = [
+      ...Object.keys(TOOL_TO_ACTION),
+      ...Object.keys(TOOL_TO_GLOBAL_ACTION),
+      ...ACCOUNT_LEVEL_TOOLS,
+    ]
+    expect(() => assertScopeRegistryInvariant(all)).not.toThrow()
+  })
+
+  it('throws with an actionable message when a tool is missing', () => {
+    expect(() =>
+      assertScopeRegistryInvariant(['findDocument', 'somethingNew']),
+    ).toThrow(/somethingNew/)
+  })
+
+  it('routing maps stay disjoint in production: a name is never in two sets', () => {
+    const collectionsAndGlobals = Object.keys(TOOL_TO_ACTION).filter(
+      (n) => n in TOOL_TO_GLOBAL_ACTION,
+    )
+    expect(collectionsAndGlobals).toEqual([])
+    const collectionsAndAccount = Object.keys(TOOL_TO_ACTION).filter((n) =>
+      ACCOUNT_LEVEL_TOOLS.has(n),
+    )
+    expect(collectionsAndAccount).toEqual([])
+    const globalsAndAccount = Object.keys(TOOL_TO_GLOBAL_ACTION).filter((n) =>
+      ACCOUNT_LEVEL_TOOLS.has(n),
+    )
+    expect(globalsAndAccount).toEqual([])
+  })
+})
+
+describe('resolveResourceKind', () => {
+  it('returns the expected kind for known tools', () => {
+    expect(resolveResourceKind('findDocument')).toBe('collection')
+    expect(resolveResourceKind('findGlobal')).toBe('global')
+    expect(resolveResourceKind('searchContent')).toBe('account')
+    expect(resolveResourceKind('not-a-tool')).toBeNull()
   })
 })
 
@@ -294,6 +469,73 @@ describe('createInitializeServer', () => {
       unknown
     >
     expect(Object.keys(inputSchema).sort()).toEqual(['collection', 'query'])
+  })
+
+  it('audit log carries targetSlug + targetKind for a collection tool', async () => {
+    const toolHandler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }))
+    const req = buildReq()
+    const tool: ToolFactoryOutput = {
+      name: 'findDocument',
+      description: 'x',
+      parameters: { collection: z.string() },
+      handler: toolHandler,
+    }
+    const init = createInitializeServer({ tools: [tool] })
+    init(req as never)(server as never)
+    const wrapped = server.registerTool.mock.calls[0]![2] as (
+      args: Record<string, unknown>,
+      extra: unknown,
+    ) => Promise<unknown>
+
+    await wrapped({ collection: 'pages' }, {})
+    const [logFields] = req.payload.logger.info.mock.calls[0]!
+    expect(logFields.targetSlug).toBe('pages')
+    expect(logFields.targetKind).toBe('collection')
+    expect((logFields as Record<string, unknown>).collectionArg).toBeUndefined()
+  })
+
+  it('audit log carries targetSlug + targetKind for a global tool', async () => {
+    const toolHandler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }))
+    const req = buildReq()
+    const tool: ToolFactoryOutput = {
+      name: 'findGlobal',
+      description: 'x',
+      parameters: { slug: z.string() },
+      handler: toolHandler,
+    }
+    const init = createInitializeServer({ tools: [tool] })
+    init(req as never)(server as never)
+    const wrapped = server.registerTool.mock.calls[0]![2] as (
+      args: Record<string, unknown>,
+      extra: unknown,
+    ) => Promise<unknown>
+
+    await wrapped({ slug: 'siteSettings' }, {})
+    const [logFields] = req.payload.logger.info.mock.calls[0]!
+    expect(logFields.targetSlug).toBe('siteSettings')
+    expect(logFields.targetKind).toBe('global')
+  })
+
+  it('audit log marks account-level tools with targetKind="account" and no targetSlug', async () => {
+    const toolHandler = vi.fn(async () => ({ content: [{ type: 'text', text: 'ok' }] }))
+    const req = buildReq()
+    const tool: ToolFactoryOutput = {
+      name: 'searchContent',
+      description: 'x',
+      parameters: { q: z.string() },
+      handler: toolHandler,
+    }
+    const init = createInitializeServer({ tools: [tool] })
+    init(req as never)(server as never)
+    const wrapped = server.registerTool.mock.calls[0]![2] as (
+      args: Record<string, unknown>,
+      extra: unknown,
+    ) => Promise<unknown>
+
+    await wrapped({ q: 'hello' }, {})
+    const [logFields] = req.payload.logger.info.mock.calls[0]!
+    expect(logFields.targetSlug).toBeUndefined()
+    expect(logFields.targetKind).toBe('account')
   })
 
   it('stamps mcp context on req before invoking the handler', async () => {

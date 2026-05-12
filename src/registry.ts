@@ -1,12 +1,10 @@
 import type { PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z, ZodObject, type ZodTypeAny } from 'zod'
-import {
-  getApiKeyContext,
-  type CollectionAction,
-  type KeyScopes,
-  type ScopePreset,
-} from './auth-strategy'
+import { getApiKeyContext } from './auth-strategy'
+import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
+
+export type ResourceKind = 'collection' | 'global' | 'account'
 import type { InitializeServerForRequest } from './endpoint'
 import { stampMcpContext, type McpTextResponse } from './tools/_helpers'
 
@@ -69,19 +67,30 @@ const PRESET_ACTIONS: Record<ScopePreset, CollectionAction[]> = {
   admin: ALL_ACTIONS,
 }
 
+/**
+ * Asymmetric per-preset action map for globals. `editor` is intentionally
+ * read-only on globals — a single bad write on a singleton broadcasts
+ * site-wide with no per-document containment. Operators who want global
+ * writes promote the key to `admin` or use a Custom key with explicit
+ * `globalScopes`. README and CHANGELOG call out the asymmetry.
+ */
+const PRESET_GLOBAL_ACTIONS: Record<ScopePreset, GlobalAction[]> = {
+  'read-only': ['read'],
+  editor: ['read'],
+  admin: ['read', 'update'],
+}
+
 const PRESET_TOOL_DENY: Record<ScopePreset, string[]> = {
   'read-only': [],
   editor: ['safeDelete', 'deleteDocument'],
   admin: [],
 }
 
-const TOOL_TO_ACTION: Record<string, CollectionAction> = {
+/** Collection-keyed tools: action depends on the targeted collection slug. */
+export const TOOL_TO_ACTION: Record<string, CollectionAction> = {
   findDocument: 'read',
-  searchContent: 'read',
-  resolveReference: 'read',
   listVersions: 'read',
   createDocument: 'create',
-  uploadMedia: 'create',
   updateDocument: 'update',
   patchLayout: 'update',
   publishDraft: 'update',
@@ -91,32 +100,120 @@ const TOOL_TO_ACTION: Record<string, CollectionAction> = {
   safeDelete: 'delete',
 }
 
+/** Global-keyed tools: action depends on the targeted global slug. */
+export const TOOL_TO_GLOBAL_ACTION: Record<string, GlobalAction> = {
+  findGlobal: 'read',
+  updateGlobal: 'update',
+  patchGlobalLayout: 'update',
+  publishGlobalDraft: 'update',
+  listGlobalVersions: 'read',
+  restoreGlobalVersion: 'update',
+}
+
+/**
+ * Account-level tools: no resource scope; the preset's action list gates
+ * them directly. The implied action is what the preset must permit
+ * account-wide (e.g. `uploadMedia` requires `create`).
+ */
+export const ACCOUNT_LEVEL_ACTIONS: Record<string, CollectionAction> = {
+  searchContent: 'read',
+  resolveReference: 'read',
+  uploadMedia: 'create',
+}
+
+export const ACCOUNT_LEVEL_TOOLS: ReadonlySet<string> = new Set(Object.keys(ACCOUNT_LEVEL_ACTIONS))
+
 export interface ScopeDecision {
   allowed: boolean
   reason?: string
 }
 
 /**
- * Pure function: given the request's scopes and the tool/collection in play,
- * decide whether the tool call is permitted. Null/undefined scopes grant
- * full access (back-compat for keys that pre-date scoped authz).
+ * Look up which routing set a tool belongs to. Returns `null` when the tool
+ * isn't registered in any set — at request time that produces a fail-closed
+ * denial; at boot time `assertScopeRegistryInvariant` turns it into a
+ * startup error so the mistake surfaces before the first request.
+ */
+export function resolveResourceKind(toolName: string): ResourceKind | null {
+  if (toolName in TOOL_TO_ACTION) return 'collection'
+  if (toolName in TOOL_TO_GLOBAL_ACTION) return 'global'
+  if (ACCOUNT_LEVEL_TOOLS.has(toolName)) return 'account'
+  return null
+}
+
+/**
+ * Plugin-init invariant: every registered tool name must appear in exactly
+ * one of `TOOL_TO_ACTION`, `TOOL_TO_GLOBAL_ACTION`, or `ACCOUNT_LEVEL_TOOLS`.
+ *
+ * Membership prevents a "forgot to register" mistake from silently falling
+ * through at request time. Disjointness prevents ambiguity between collection
+ * and global routing for the same name.
+ *
+ * Called once from `src/index.ts` after the tool list is assembled. Throws
+ * synchronously so plugin boot fails with an actionable message.
+ */
+export function assertScopeRegistryInvariant(toolNames: string[]): void {
+  const missing: string[] = []
+  const duplicates: string[] = []
+  for (const name of toolNames) {
+    let memberships = 0
+    if (name in TOOL_TO_ACTION) memberships++
+    if (name in TOOL_TO_GLOBAL_ACTION) memberships++
+    if (ACCOUNT_LEVEL_TOOLS.has(name)) memberships++
+    if (memberships === 0) missing.push(name)
+    if (memberships > 1) duplicates.push(name)
+  }
+  if (missing.length > 0 || duplicates.length > 0) {
+    const parts: string[] = ['[payload-mcp-toolkit] Scope routing invariant violated.']
+    if (missing.length > 0) {
+      parts.push(
+        `Tool(s) absent from TOOL_TO_ACTION, TOOL_TO_GLOBAL_ACTION, and ACCOUNT_LEVEL_TOOLS: ${missing.join(', ')}.`,
+      )
+    }
+    if (duplicates.length > 0) {
+      parts.push(
+        `Tool(s) registered in more than one routing set: ${duplicates.join(', ')}.`,
+      )
+    }
+    parts.push('Add the tool to exactly one routing set in src/registry.ts.')
+    throw new Error(parts.join(' '))
+  }
+}
+
+/**
+ * Pure function: decide whether a tool call is permitted given the request's
+ * scopes, the tool's resource kind, and (when applicable) the targeted slug.
+ *
+ * Resource kind is derived by the caller via `resolveResourceKind(toolName)`
+ * so per-call routing is explicit; we don't re-derive inside this function.
  *
  * Fail-closed semantics:
- *   - When `scopes.collections` is set, it is a *whitelist* — collections
- *     not listed there are denied for this key. (Per-collection overrides
- *     replace the preset's action set when present, but absence of the
- *     collection is denial, not fallback to preset.)
- *   - When the tool has no `collection` arg (e.g. `searchContent`,
- *     `uploadMedia`, `resolveReference`), the action implied by the tool
- *     is checked against the preset's allowed actions. If a preset is set
- *     and the action is not in its list, the call is denied.
+ *   - Null/undefined scopes grant full access (back-compat).
+ *   - When `scopes.collections` / `scopes.globals` is set, it is a *whitelist*
+ *     for that resource kind — unlisted resources are denied.
+ *   - When a tool resolves to a collection or global kind but the corresponding
+ *     scope map is undefined and `scopes.preset` is undefined, the call is
+ *     denied (closes the `tools.allow`-only latent fail-open).
+ *   - Account-level tools are gated by the preset's action list, if a preset
+ *     is set. Without a preset, a key scoped to specific collections/globals
+ *     cannot use account-level tools — they'd broaden the surface.
  */
 export function assertScopeAllows(
   scopes: KeyScopes | null | undefined,
   toolName: string,
-  collection: string | undefined,
+  resource: string | undefined,
+  resourceKind: ResourceKind | null = resolveResourceKind(toolName),
 ): ScopeDecision {
-  if (!scopes || (scopes.preset === undefined && !scopes.collections && !scopes.tools)) {
+  // Unregistered tool — fail-closed at request time. The invariant check
+  // catches this at boot, but this is the belt-and-braces fallback.
+  if (resourceKind === null) {
+    return {
+      allowed: false,
+      reason: `Tool "${toolName}" has no registered scope mapping.`,
+    }
+  }
+
+  if (!scopes || (scopes.preset === undefined && !scopes.collections && !scopes.globals && !scopes.tools)) {
     return { allowed: true }
   }
 
@@ -137,54 +234,133 @@ export function assertScopeAllows(
     }
   }
 
+  if (resourceKind === 'collection') {
+    return checkCollection(scopes, toolName, resource)
+  }
+  if (resourceKind === 'global') {
+    return checkGlobal(scopes, toolName, resource)
+  }
+  return checkAccount(scopes, toolName)
+}
+
+function checkCollection(
+  scopes: KeyScopes,
+  toolName: string,
+  collection: string | undefined,
+): ScopeDecision {
   const action = TOOL_TO_ACTION[toolName]
   const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
   const collectionsScope = scopes.collections
 
-  if (collection) {
-    if (!action) return { allowed: true }
-    if (collectionsScope) {
-      const override = collectionsScope[collection]
-      if (!override) {
-        return {
-          allowed: false,
-          reason: `Collection "${collection}" is not in this API key's allowed collections.`,
-        }
-      }
-      if (!override.includes(action)) {
-        return {
-          allowed: false,
-          reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's scope.`,
-        }
-      }
-      return { allowed: true }
-    }
-    if (presetActions && !presetActions.includes(action)) {
+  if (!collection) {
+    // Collection-keyed tool called without a slug; defer to schema validation.
+    return { allowed: true }
+  }
+  if (!action) return { allowed: true }
+
+  if (collectionsScope) {
+    const override = collectionsScope[collection]
+    if (!override) {
       return {
         allowed: false,
-        reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's preset.`,
+        reason: `Collection "${collection}" is not in this API key's allowed collections.`,
+      }
+    }
+    if (!override.includes(action)) {
+      return {
+        allowed: false,
+        reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's scope.`,
       }
     }
     return { allowed: true }
   }
 
-  // No collection arg: the tool acts at the account level (search across
-  // all readable collections, upload media, resolve references, etc.).
-  // Check the implied action against the preset, if one is set.
-  if (action && presetActions && !presetActions.includes(action)) {
+  if (!presetActions) {
+    // Fail-closed: `tools.allow` without a `collections` map or preset would
+    // otherwise broadcast the tool across every collection. Require explicit
+    // intent.
     return {
       allowed: false,
-      reason: `Action "${action}" is not permitted by this API key's preset.`,
+      reason: `Tool "${toolName}" requires an explicit collection scope or preset on this API key.`,
     }
   }
 
-  // When a key uses only `scopes.collections` (no preset), tools without a
-  // collection arg are denied — the operator has scoped the key to specific
-  // collections, so an account-wide tool would broaden the surface.
-  if (action && !presetActions && collectionsScope) {
+  if (!presetActions.includes(action)) {
     return {
       allowed: false,
-      reason: `Tool "${toolName}" requires a collection argument under this API key's collection-scoped configuration.`,
+      reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's preset.`,
+    }
+  }
+  return { allowed: true }
+}
+
+function checkGlobal(
+  scopes: KeyScopes,
+  toolName: string,
+  global: string | undefined,
+): ScopeDecision {
+  const action = TOOL_TO_GLOBAL_ACTION[toolName]
+  const presetActions = scopes.preset ? PRESET_GLOBAL_ACTIONS[scopes.preset] : undefined
+  const globalsScope = scopes.globals
+
+  if (!global) {
+    return { allowed: true }
+  }
+  if (!action) return { allowed: true }
+
+  if (globalsScope) {
+    const override = globalsScope[global]
+    if (!override) {
+      return {
+        allowed: false,
+        reason: `Global "${global}" is not in this API key's allowed globals.`,
+      }
+    }
+    if (!override.includes(action)) {
+      return {
+        allowed: false,
+        reason: `Action "${action}" on global "${global}" is not permitted by this API key's scope.`,
+      }
+    }
+    return { allowed: true }
+  }
+
+  if (!presetActions) {
+    return {
+      allowed: false,
+      reason: `Tool "${toolName}" requires an explicit global scope or preset on this API key.`,
+    }
+  }
+
+  if (!presetActions.includes(action)) {
+    return {
+      allowed: false,
+      reason: `Action "${action}" on global "${global}" is not permitted by this API key's preset.`,
+    }
+  }
+  return { allowed: true }
+}
+
+function checkAccount(scopes: KeyScopes, toolName: string): ScopeDecision {
+  const action = ACCOUNT_LEVEL_ACTIONS[toolName]
+  const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
+
+  if (presetActions) {
+    if (action && !presetActions.includes(action)) {
+      return {
+        allowed: false,
+        reason: `Action "${action}" is not permitted by this API key's preset.`,
+      }
+    }
+    return { allowed: true }
+  }
+
+  // No preset but a resource-scoped key exists (collections or globals) →
+  // account-level tools broaden the surface beyond the scoped resources.
+  if (scopes.collections || scopes.globals) {
+    return {
+      allowed: false,
+      reason: `Tool "${toolName}" requires a resource argument under this API key's scoped configuration.`,
     }
   }
 
@@ -273,16 +449,28 @@ export function createInitializeServer(
     const requestId = getRequestId(req)
 
     for (const tool of tools) {
+      const resourceKind = resolveResourceKind(tool.name)
       const wrapped = async (
         args: Record<string, unknown>,
         extra: unknown,
       ): Promise<unknown> => {
         const start = Date.now()
         const keyCtx = getApiKeyContext(req)
-        const collectionArg = typeof args.collection === 'string' ? args.collection : undefined
+        const targetSlug =
+          typeof args.collection === 'string'
+            ? args.collection
+            : typeof args.slug === 'string'
+              ? args.slug
+              : undefined
+        const targetKind = resourceKind ?? undefined
         const dataKeys = extractDataKeys(args)
 
-        const decision = assertScopeAllows(keyCtx?.scopes ?? null, tool.name, collectionArg)
+        const decision = assertScopeAllows(
+          keyCtx?.scopes ?? null,
+          tool.name,
+          targetSlug,
+          resourceKind,
+        )
         if (!decision.allowed) {
           logger?.warn?.(
             {
@@ -290,7 +478,8 @@ export function createInitializeServer(
               keyId: keyCtx?.keyId,
               keyPrefix: keyCtx?.keyPrefix,
               tool: tool.name,
-              collectionArg,
+              targetSlug,
+              targetKind,
               dataKeys,
               success: false,
               isError: true,
@@ -313,7 +502,8 @@ export function createInitializeServer(
               keyId: keyCtx?.keyId,
               keyPrefix: keyCtx?.keyPrefix,
               tool: tool.name,
-              collectionArg,
+              targetSlug,
+              targetKind,
               dataKeys,
               success: true,
               isError: false,
@@ -333,7 +523,8 @@ export function createInitializeServer(
               keyId: keyCtx?.keyId,
               keyPrefix: keyCtx?.keyPrefix,
               tool: tool.name,
-              collectionArg,
+              targetSlug,
+              targetKind,
               dataKeys,
               argsSummary: summariseArgs(args),
               success: false,
