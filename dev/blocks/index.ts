@@ -8,6 +8,7 @@ import { FullWidth } from './sections/FullWidth'
 import { TwoColumn } from './sections/TwoColumn'
 import { CtaBanner } from './sections/CtaBanner'
 import { HeadingOnly } from './sections/HeadingOnly'
+import { Container } from './sections/Container'
 
 export const allLeafBlocks: Block[] = [Heading, RichText, ImageBlock, ButtonGroup, Quote]
-export const allSectionBlocks: Block[] = [FullWidth, TwoColumn, CtaBanner, HeadingOnly]
+export const allSectionBlocks: Block[] = [FullWidth, TwoColumn, CtaBanner, HeadingOnly, Container]
