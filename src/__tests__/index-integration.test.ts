@@ -95,4 +95,55 @@ describe('contentToolkitPlugin integration', () => {
     expect(slugs).toContain('my-keys')
     expect(slugs).not.toContain('payload-mcp-api-keys')
   })
+
+  it('a host config with no globals registers no global tools and no global resource', () => {
+    const cfg = contentToolkitPlugin()(baseConfig())
+    // The api-keys collection's globalScopes condition reports back the absence:
+    const apiKeys = (cfg.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
+      fields: Array<{ name?: string; admin?: { condition?: (data: unknown) => boolean } }>
+    }
+    const globalScopes = apiKeys.fields.find((f) => f.name === 'globalScopes')!
+    expect(globalScopes.admin?.condition?.({ preset: 'custom' })).toBe(false)
+  })
+
+  it('a host config with one plain global makes globalScopes UI render under Custom', () => {
+    const cfg = baseConfig() as Config & { globals?: unknown[] }
+    cfg.globals = [
+      { slug: 'site-settings', fields: [{ name: 'siteName', type: 'text' }] },
+    ] as never
+    const out = contentToolkitPlugin()(cfg)
+    const apiKeys = (out.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
+      fields: Array<{
+        name?: string
+        admin?: {
+          condition?: (data: unknown) => boolean
+          components?: { Field?: { clientProps?: { availableGlobals?: string[] } } }
+        }
+      }>
+    }
+    const globalScopes = apiKeys.fields.find((f) => f.name === 'globalScopes')!
+    expect(globalScopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(globalScopes.admin?.components?.Field?.clientProps?.availableGlobals).toEqual([
+      'site-settings',
+    ])
+  })
+
+  it('excluded globals are filtered out of availableGlobals at registration time', () => {
+    const cfg = baseConfig() as Config & { globals?: unknown[] }
+    cfg.globals = [
+      { slug: 'site-settings', fields: [{ name: 'siteName', type: 'text' }] },
+      { slug: 'secret-config', fields: [{ name: 'token', type: 'text' }] },
+    ] as never
+    const out = contentToolkitPlugin({ exclude: { globals: ['secret-config'] } })(cfg)
+    const apiKeys = (out.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
+      fields: Array<{
+        name?: string
+        admin?: { components?: { Field?: { clientProps?: { availableGlobals?: string[] } } } }
+      }>
+    }
+    const globalScopes = apiKeys.fields.find((f) => f.name === 'globalScopes')!
+    expect(globalScopes.admin?.components?.Field?.clientProps?.availableGlobals).toEqual([
+      'site-settings',
+    ])
+  })
 })

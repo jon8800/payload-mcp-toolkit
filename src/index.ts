@@ -1,22 +1,35 @@
-import type { Block, CollectionConfig, Config, Plugin } from 'payload'
-import type { ContentToolkitOptions } from './types'
+import type { Block, CollectionConfig, Config, GlobalConfig, Plugin } from 'payload'
+import type { ContentToolkitOptions, GlobalSchema } from './types'
 import {
   introspectCollections,
+  introspectGlobals,
   introspectBlocks,
   buildBlockNestingMap,
   buildRelationshipGraph,
 } from './introspection'
 import { generatePrompts } from './prompts'
 import { generateResources } from './resources'
-import { computeDraftCollections } from './draft-workflow'
+import { computeDraftCollections, computeDraftGlobals } from './draft-workflow'
 import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys'
 import { createBearerStrategy } from './auth-strategy'
 import { createMcpEndpoints } from './endpoint'
-import { createInitializeServer, type ToolFactoryOutput } from './registry'
+import {
+  assertScopeRegistryInvariant,
+  createInitializeServer,
+  type ToolFactoryOutput,
+} from './registry'
 import { assertNoSlugConflict, assertNoUpstreamPlugin } from './conflict-detection'
 import { createCreateDocumentTool } from './tools/create-document'
 import { createDeleteDocumentTool } from './tools/delete-document'
 import { createFindDocumentTool } from './tools/find-document'
+import { createFindGlobalTool } from './tools/find-global'
+import { createUpdateGlobalTool } from './tools/update-global'
+import { createPatchGlobalLayoutTool } from './tools/patch-global-layout'
+import { createPublishGlobalDraftTool } from './tools/publish-global-draft'
+import {
+  createListGlobalVersionsTool,
+  createRestoreGlobalVersionTool,
+} from './tools/global-versions'
 import { createPatchLayoutTool } from './tools/patch-layout'
 import { createPublishDraftTool } from './tools/publish-draft'
 import { createResolveReferenceTool } from './tools/resolve-reference'
@@ -70,11 +83,13 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     assertNoSlugConflict(incomingConfig.collections as CollectionConfig[] | undefined, apiKeysSlug)
 
     const collections = (incomingConfig.collections ?? []) as CollectionConfig[]
+    const globals = (incomingConfig.globals ?? []) as GlobalConfig[]
     const allBlocks = (incomingConfig.blocks ?? []) as Block[]
 
     const collectionSchemas = introspectCollections(collections)
+    const globalSchemas = introspectGlobals(globals)
     const blockCatalog = introspectBlocks(allBlocks)
-    const blockNesting = buildBlockNestingMap(collections, allBlocks)
+    const blockNesting = buildBlockNestingMap(collections, globals, allBlocks)
     const relationships = buildRelationshipGraph(collectionSchemas)
 
     const previewSiteUrl = options.preview?.disabled
@@ -91,6 +106,11 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       apiKeysSlug,
     })
 
+    const { draftGlobals, excluded: excludedGlobals } = computeDraftGlobals(globals, {
+      draftBehavior: options.draftBehavior,
+      excludeGlobals: options.exclude?.globals,
+    })
+
     // Build a slug → CollectionConfig map for tools that need access to
     // collection-level admin config (preview functions, etc).
     const collectionsBySlug = new Map<string, CollectionConfig>()
@@ -105,6 +125,20 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       if (!excluded.has(slug)) exposedSchemas.set(slug, schema)
     }
 
+    // Same shape for globals — excluded slugs are stripped at registration
+    // time so they never reach Zod input enums, the globals://schema
+    // resource, or availableGlobals on the admin matrix. composeScopes
+    // stays exclusion-unaware (mirrors the collection mechanism).
+    const exposedGlobalSchemas = new Map<string, GlobalSchema>()
+    const globalsBySlug = new Map<string, GlobalConfig>()
+    for (const [slug, schema] of globalSchemas) {
+      if (excludedGlobals.has(slug)) continue
+      exposedGlobalSchemas.set(slug, schema)
+    }
+    for (const g of globals) {
+      if (!excludedGlobals.has(g.slug)) globalsBySlug.set(g.slug, g)
+    }
+
     const prompts = generatePrompts(
       exposedSchemas,
       blockCatalog,
@@ -112,7 +146,13 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       relationships,
       options.domainPrompts,
     )
-    const resources = generateResources(exposedSchemas, blockCatalog, blockNesting, relationships)
+    const resources = generateResources(
+      exposedSchemas,
+      blockCatalog,
+      blockNesting,
+      relationships,
+      exposedGlobalSchemas,
+    )
 
     const searchableCollections = new Map<string, string[]>()
     for (const [slug, schema] of exposedSchemas) {
@@ -148,6 +188,37 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const schedulePublish = createSchedulePublishTool(exposedSchemas, draftCollections)
     if (schedulePublish) tools.push(schedulePublish as unknown as ToolFactoryOutput)
 
+    // Global tools — registered only when at least one global is exposed.
+    if (exposedGlobalSchemas.size > 0) {
+      tools.push(
+        createFindGlobalTool(
+          exposedGlobalSchemas,
+          draftGlobals,
+          globalsBySlug,
+          previewSiteUrl,
+          previewDisabled,
+        ) as unknown as ToolFactoryOutput,
+        createUpdateGlobalTool(exposedGlobalSchemas, draftGlobals) as unknown as ToolFactoryOutput,
+      )
+
+      const patchGlobalLayout = createPatchGlobalLayoutTool(blockCatalog, blockNesting, draftGlobals)
+      if (patchGlobalLayout) tools.push(patchGlobalLayout as unknown as ToolFactoryOutput)
+
+      const publishGlobalDraft = createPublishGlobalDraftTool(draftGlobals)
+      if (publishGlobalDraft) tools.push(publishGlobalDraft as unknown as ToolFactoryOutput)
+
+      const listGlobalVersions = createListGlobalVersionsTool(draftGlobals)
+      if (listGlobalVersions) tools.push(listGlobalVersions as unknown as ToolFactoryOutput)
+
+      const restoreGlobalVersion = createRestoreGlobalVersionTool(draftGlobals)
+      if (restoreGlobalVersion) tools.push(restoreGlobalVersion as unknown as ToolFactoryOutput)
+    }
+
+    // Boot-time invariant: every registered tool must route to exactly one
+    // scope set. Throws synchronously so plugin init fails with an
+    // actionable message if a new tool ever lands without a routing entry.
+    assertScopeRegistryInvariant(tools.map((t) => t.name))
+
     // Build the per-request initializer that mcp-handler invokes.
     const buildInitializeServer = createInitializeServer({
       tools,
@@ -163,11 +234,13 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const availableCollections = collections
       .map((c) => c.slug)
       .filter((s) => s !== apiKeysSlug)
+    const availableGlobals = [...exposedGlobalSchemas.keys()]
     const availableTools = tools.map((t) => t.name)
     const apiKeysCollection = createApiKeysCollection({
       slug: apiKeysSlug,
       userCollection,
       availableCollections,
+      availableGlobals,
       availableTools,
     })
     const updatedCollections: CollectionConfig[] = [...collections, apiKeysCollection]
@@ -214,12 +287,15 @@ export type {
   ContentToolkitOptions,
   DomainPrompt,
   CollectionSchema,
+  GlobalSchema,
   BlockCatalog,
   BlockSchema,
   BlockNestingMap,
   BlockNestingEdge,
   RelationshipEdge,
   FieldSchema,
+  CollectionAction,
+  GlobalAction,
+  KeyScopes,
+  ScopePreset,
 } from './types'
-
-export type { CollectionAction, KeyScopes, ScopePreset } from './auth-strategy'

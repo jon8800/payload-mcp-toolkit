@@ -1,5 +1,5 @@
-import type { CollectionConfig } from 'payload'
-import { hasCollectionDrafts } from './introspection'
+import type { CollectionConfig, GlobalConfig } from 'payload'
+import { hasCollectionDrafts, hasGlobalDrafts } from './introspection'
 
 interface ComputeDraftCollectionsOptions {
   /** Per-collection draft behavior overrides */
@@ -72,4 +72,49 @@ export function computeDraftCollections(
   }
 
   return { draftCollections, excluded }
+}
+
+interface ComputeDraftGlobalsOptions {
+  /**
+   * Per-resource draft behavior overrides. Shared with collections: a single
+   * record may contain both collection slugs and global slugs. Collisions
+   * are unambiguous in practice — Payload's slug registry forbids a global
+   * and a collection sharing a slug.
+   */
+  draftBehavior?: Record<string, 'always-draft' | 'always-publish'>
+  /** Global slugs to exclude from the MCP surface entirely */
+  excludeGlobals?: string[]
+}
+
+export interface DraftGlobalsResult {
+  draftGlobals: Set<string>
+  excluded: Set<string>
+}
+
+/**
+ * Peer of `computeDraftCollections` for globals. Returns the slugs whose
+ * draft workflow is on (i.e. `versions.drafts` enabled, with optional
+ * `'always-publish'` override turning it off), and the set excluded from
+ * the MCP surface entirely.
+ *
+ * Mirrors the collection rule: `versions.drafts: true` defaults to
+ * `'always-draft'` so raw publish is locked and `updateGlobal` / patch
+ * routes preserve draft semantics.
+ */
+export function computeDraftGlobals(
+  globals: GlobalConfig[],
+  options: ComputeDraftGlobalsOptions = {},
+): DraftGlobalsResult {
+  const draftGlobals = new Set<string>()
+  const excluded = new Set<string>(options.excludeGlobals ?? [])
+
+  for (const global of globals) {
+    if (excluded.has(global.slug)) continue
+    if (!hasGlobalDrafts(global)) continue
+    const override = options.draftBehavior?.[global.slug]
+    if (override === 'always-publish') continue
+    draftGlobals.add(global.slug)
+  }
+
+  return { draftGlobals, excluded }
 }
