@@ -18,11 +18,17 @@ interface CollectionScopeRow {
   actions?: unknown
 }
 
+interface GlobalScopeRow {
+  global?: unknown
+  actions?: unknown
+}
+
 interface ApiKeyRow {
   id: string | number
   user: unknown
   preset?: ScopePreset | 'custom' | null
   collectionScopes?: CollectionScopeRow[] | null
+  globalScopes?: GlobalScopeRow[] | null
   toolAllow?: string[] | null
   toolDeny?: string[] | null
   expiresAt?: string | Date | null
@@ -32,6 +38,7 @@ interface ApiKeyRow {
 }
 
 const VALID_ACTIONS: ReadonlySet<CollectionAction> = new Set(['read', 'create', 'update', 'delete'])
+const VALID_GLOBAL_ACTIONS: ReadonlySet<GlobalAction> = new Set(['read', 'update'])
 
 /**
  * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`
@@ -56,21 +63,35 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
   const hasPreset = typeof presetRaw === 'string' && presetRaw.length > 0
   const collectionScopes = Array.isArray(row.collectionScopes) ? row.collectionScopes : []
   const hasCollectionScopes = collectionScopes.length > 0
+  const globalScopes = Array.isArray(row.globalScopes) ? row.globalScopes : []
+  const hasGlobalScopes = globalScopes.length > 0
   const toolAllow = Array.isArray(row.toolAllow) ? row.toolAllow.filter((t) => typeof t === 'string') : []
   const toolDeny = Array.isArray(row.toolDeny) ? row.toolDeny.filter((t) => typeof t === 'string') : []
   const hasToolAllow = toolAllow.length > 0
   const hasToolDeny = toolDeny.length > 0
 
-  if (!hasPreset && !hasCollectionScopes && !hasToolAllow && !hasToolDeny) {
+  if (
+    !hasPreset &&
+    !hasCollectionScopes &&
+    !hasGlobalScopes &&
+    !hasToolAllow &&
+    !hasToolDeny
+  ) {
     return null
   }
 
-  // Custom preset with no overrides: deny everything. The empty `collections`
-  // whitelist denies every collection-scoped tool, and the empty `tools.allow`
-  // list denies every tool dispatch — so account-wide tools (uploadMedia,
-  // searchContent, etc.) are also denied.
-  if (presetRaw === 'custom' && !hasCollectionScopes && !hasToolAllow && !hasToolDeny) {
-    return { collections: {}, tools: { allow: [] } }
+  // Custom preset with no overrides on ANY axis: deny everything. The empty
+  // `collections` / `globals` whitelists deny every resource-scoped tool,
+  // and the empty `tools.allow` list denies every tool dispatch — so
+  // account-wide tools (uploadMedia, searchContent, etc.) are also denied.
+  if (
+    presetRaw === 'custom' &&
+    !hasCollectionScopes &&
+    !hasGlobalScopes &&
+    !hasToolAllow &&
+    !hasToolDeny
+  ) {
+    return { collections: {}, globals: {}, tools: { allow: [] } }
   }
 
   const out: KeyScopes = {}
@@ -90,6 +111,21 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
     }
     if (Object.keys(collections).length > 0) {
       out.collections = collections
+    }
+  }
+  if (hasGlobalScopes) {
+    const globals: Record<string, GlobalAction[]> = {}
+    for (const entry of globalScopes) {
+      const slug = typeof entry?.global === 'string' ? entry.global : null
+      if (!slug) continue
+      const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
+      const actions = rawActions.filter(
+        (a): a is GlobalAction => typeof a === 'string' && VALID_GLOBAL_ACTIONS.has(a as GlobalAction),
+      )
+      globals[slug] = actions
+    }
+    if (Object.keys(globals).length > 0) {
+      out.globals = globals
     }
   }
   if (hasToolAllow || hasToolDeny) {

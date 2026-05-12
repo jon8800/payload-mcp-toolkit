@@ -79,6 +79,7 @@ describe('composeScopes', () => {
     // of falling through to the "no scopes set = full access" guard.
     expect(composeScopes({ ...baseRow, preset: 'custom' })).toEqual({
       collections: {},
+      globals: {},
       tools: { allow: [] },
     })
   })
@@ -111,6 +112,66 @@ describe('composeScopes', () => {
       ],
     })
     expect(out).toEqual({ collections: { posts: ['read', 'update'] } })
+  })
+
+  // ─── Globals (U9) ────────────────────────────────────────────────
+
+  it('maps globalScopes to KeyScopes.globals', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      globalScopes: [
+        { global: 'siteSettings', actions: ['read', 'update'] },
+        { global: 'footer', actions: ['read'] },
+      ],
+    })
+    expect(out).toEqual({
+      globals: { siteSettings: ['read', 'update'], footer: ['read'] },
+    })
+  })
+
+  it('filters invalid global action values', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      globalScopes: [
+        { global: 'siteSettings', actions: ['read', 'create', 'delete', 'update'] as unknown as string[] },
+      ],
+    })
+    // Only read/update are valid on globals — create/delete dropped.
+    expect(out).toEqual({ globals: { siteSettings: ['read', 'update'] } })
+  })
+
+  it('preset admin + globalScopes: null produces a preset-only KeyScopes (legacy v0.5 row)', () => {
+    const out = composeScopes({ ...baseRow, preset: 'admin', globalScopes: null })
+    expect(out).toEqual({ preset: 'admin' })
+  })
+
+  it('preset editor + globalScopes: [] (legacy v0.5 empty) produces preset-only KeyScopes', () => {
+    const out = composeScopes({ ...baseRow, preset: 'editor', globalScopes: [] })
+    expect(out).toEqual({ preset: 'editor' })
+  })
+
+  it('widened deny-all sentinel: empty everywhere produces both maps and tools.allow=[]', () => {
+    expect(
+      composeScopes({
+        ...baseRow,
+        preset: 'custom',
+        collectionScopes: [],
+        globalScopes: [],
+        toolAllow: [],
+        toolDeny: [],
+      }),
+    ).toEqual({ collections: {}, globals: {}, tools: { allow: [] } })
+  })
+
+  it('partial custom override on the globals axis does NOT fire the sentinel', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      globalScopes: [{ global: 'siteSettings', actions: ['read'] }],
+    })
+    expect(out).toEqual({ globals: { siteSettings: ['read'] } })
   })
 
   it('combines toolAllow and toolDeny into tools.allow / tools.deny', () => {
