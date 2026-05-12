@@ -5,6 +5,12 @@ import { getApiKeyContext } from './auth-strategy'
 
 export const MCP_BASE_PATH = '/api/mcp'
 export const MCP_ENDPOINT_PATH = '/mcp'
+/**
+ * `mcp-handler` derives its streamable-HTTP route as `${basePath}/mcp`. To
+ * land that on `/api/mcp` (the public URL), we pass `/api` here — not the
+ * full `/api/mcp`, which would route to `/api/mcp/mcp` and 404.
+ */
+const MCP_HANDLER_BASE_PATH = '/api'
 
 export type InitializeServerForRequest = (
   req: PayloadRequest,
@@ -99,7 +105,7 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
     if (!req.url) return jsonRpcError('Missing request URL', -32600, 400)
 
     const handler = createMcpHandler(buildInitializeServer(req), undefined, {
-      basePath: MCP_BASE_PATH,
+      basePath: MCP_HANDLER_BASE_PATH,
       disableSse: true,
       verboseLogs,
     })
