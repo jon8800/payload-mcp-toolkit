@@ -138,6 +138,51 @@ describe('createApiKeysCollection', () => {
     expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
   })
 
+  it('renders globalScopes as a JSON field mirroring collectionScopes', () => {
+    const collection = createApiKeysCollection({
+      ...baseOptions,
+      availableGlobals: ['siteSettings', 'footer'],
+    })
+    const scopes = findNamed(collection.fields as Field[], 'globalScopes') as {
+      type?: string
+      admin?: {
+        components?: {
+          Field?: {
+            path?: string
+            exportName?: string
+            clientProps?: { availableGlobals?: string[] }
+          }
+        }
+        condition?: (data: unknown) => boolean
+      }
+    }
+    expect(scopes.type).toBe('json')
+    expect(scopes.admin?.components?.Field?.exportName).toBe('GlobalScopesMatrix')
+    expect(scopes.admin?.components?.Field?.clientProps?.availableGlobals).toEqual([
+      'siteSettings',
+      'footer',
+    ])
+    // Conditional render: only Custom preset AND availableGlobals.length > 0
+    expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
+  })
+
+  it('omits the globalScopes matrix from the form when no globals are available', () => {
+    const collection = createApiKeysCollection({ ...baseOptions })
+    const scopes = findNamed(collection.fields as Field[], 'globalScopes') as {
+      admin?: { condition?: (data: unknown) => boolean }
+    }
+    // Field is still registered (so its column exists), but the admin condition
+    // is false even under Custom so no UI flickers in for empty configs.
+    expect(scopes).toBeDefined()
+    expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(false)
+  })
+
+  it('createApiKeysCollection accepts options without availableGlobals (back-compat)', () => {
+    // Direct callers from before globals support continue to work.
+    expect(() => createApiKeysCollection({ ...baseOptions })).not.toThrow()
+  })
+
   it('groups tool overrides into a custom-only collapsible', () => {
     const collection = createApiKeysCollection(baseOptions)
     const collapsible = (collection.fields as Field[]).find(

@@ -24,6 +24,13 @@ export interface CreateApiKeysCollectionOptions {
    * Sourced from the toolkit's registered tools at plugin init.
    */
   availableTools: string[]
+  /**
+   * Global slugs offered to the global-scopes matrix component. Optional —
+   * direct callers of the factory that pre-date globals support continue
+   * to work; sites with no globals get an empty array and the second
+   * matrix table is not rendered.
+   */
+  availableGlobals?: string[]
 }
 
 const PRESET_OPTIONS = [
@@ -70,6 +77,9 @@ export function createApiKeysCollection(
 
   const slug = options.slug ?? API_KEYS_DEFAULT_SLUG
   const toolOptions = options.availableTools.map((t) => ({ label: t, value: t }))
+  const availableGlobals = Array.isArray(options.availableGlobals)
+    ? options.availableGlobals
+    : []
 
   const presetField: Field = {
     name: 'preset',
@@ -102,6 +112,27 @@ export function createApiKeysCollection(
           exportName: 'CollectionScopesMatrix',
           clientProps: {
             availableCollections: options.availableCollections,
+          },
+        },
+      },
+    },
+  }
+
+  // Mirrors `collectionScopes` exactly — one additive JSONB column with a
+  // default of `'[]'`, default-rendered by `GlobalScopesMatrix`. Hidden
+  // under non-custom presets. Stored shape:
+  //   Array<{ global: string; actions: ('read'|'update')[] }>
+  const globalScopesField: Field = {
+    name: 'globalScopes',
+    type: 'json',
+    admin: {
+      condition: (data: unknown) => isCustomPreset(data) && availableGlobals.length > 0,
+      components: {
+        Field: {
+          path: 'payload-mcp-toolkit/client',
+          exportName: 'GlobalScopesMatrix',
+          clientProps: {
+            availableGlobals,
           },
         },
       },
@@ -172,6 +203,7 @@ export function createApiKeysCollection(
       },
       presetField,
       collectionScopesField,
+      globalScopesField,
       toolsCollapsible,
 
       // Sidebar — identity + lifecycle.
