@@ -4,6 +4,84 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-05-13
+
+### Added
+- **First-class globals support across the MCP surface.** Sites with Payload
+  globals can now read and write them through the toolkit:
+  - `findGlobal { slug, draft? }` — reads any global, stamps a preview URL on
+    draft documents when the global's `admin.livePreview` / `admin.preview`
+    is configured.
+  - `updateGlobal { slug, data }` — partial-merge update with the same prose
+    JSON contract as `updateDocument`; response message lists the changed
+    field names.
+  - `patchGlobalLayout { slug, layoutField, operation, blocks, index? }` —
+    surgical block-array edits on any `blocks`-typed field inside a global,
+    at any nesting depth. Mirrors `patchLayout`'s operation grammar.
+    Conditionally registered (only when at least one global has a blocks
+    field anywhere in its tree).
+  - `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` —
+    registered only for globals with `versions.drafts` enabled.
+  - `globals://schema` resource — JSON schema of every non-excluded global.
+  - `blocks://nesting` body now includes global-owned edges with
+    `ownerType: "global"`; existing collection-owned edges are unchanged.
+- **`KeyScopes.globals`** typed scope axis, keyed by global slug with the
+  `'read' | 'update'` action vocabulary. Mirrors `KeyScopes.collections`.
+- **Admin matrix UI gains a "Global scopes" table** beneath the existing
+  "Collection scopes" table under the Custom preset. The new table only
+  renders when at least one global is registered. Both matrices use a
+  shared `ScopesTable` renderer.
+- **`exclude.globals` honoured.** Excluded global slugs are filtered out of
+  every tool's Zod `slug` enum, the `globals://schema` resource, the
+  `blocks://nesting` edges for that global, and the `availableGlobals` array
+  passed to the admin matrix.
+
+### Changed
+- **Audit log shape change.** The per-tool audit log field `collectionArg`
+  is replaced by two fields:
+  - `targetSlug` — populated from `args.collection ?? args.slug`, so global
+    operations now appear in audit queries (previously they logged
+    `collectionArg: undefined`).
+  - `targetKind` — `'collection' | 'global' | 'account' | undefined`, derived
+    from the registry's tool-routing lookup.
+
+  Operators with SIEM rules or dashboards filtering on `collectionArg` must
+  update their queries. The rename is unconditional — there is no
+  compatibility alias because the original field misreports for global
+  operations and a half-deprecated field would muddy security audits.
+- **`editor` preset is intentionally read-only on globals.** Collections
+  under `editor` continue to get `['read', 'create', 'update']`; globals
+  under `editor` get `['read']` only. A typo on a global broadcasts
+  site-wide on a single write (site name, footer links, social handles) with
+  no per-document containment to fall back on, so editor-tier keys cannot
+  reach `updateGlobal` / `patchGlobalLayout`. To write globals from a
+  non-admin key, use the Custom preset with an explicit `globalScopes`
+  entry. This is a behaviour decision for the new surface, not a regression
+  of any prior behaviour — globals weren't reachable from any preset in
+  v0.5.
+- **`tools.allow` without an explicit resource scope is now a deny.**
+  Previously, `tools: { allow: ['updateDocument'] }` with no `collections`
+  map and no preset would allow `updateDocument` on every collection. The
+  fix lands now and applies symmetrically to collections and globals: when a
+  tool resolves to a collection or global kind and the corresponding scope
+  map is undefined AND `scopes.preset` is undefined, the call is denied
+  with `Tool "X" requires an explicit <kind> scope or preset on this API
+  key`. Operators relying on the `tools.allow`-only shape (not a documented
+  configuration) must add an explicit `collections` / `globals` map or a
+  preset.
+- **`scopes.collectionArg` log field is gone** (covered above).
+
+### Migration
+- Production deploys must run `pnpm payload migrate:create` after upgrading
+  to capture the new `globalScopes` JSONB column on `payload-mcp-api-keys`.
+  The plugin does not ship migrations because the host app owns its
+  migrations directory (consistent with v0.5). Local dev with `push: true`
+  auto-syncs the column on next `pnpm dev`.
+- Existing v0.5 admin-preset keys keep full access after upgrade. The new
+  `globalScopes` column reads as `null` on legacy rows; `composeScopes`
+  treats null/undefined/empty as "no override → preset applies", so
+  admin-preset keys retain `update` on globals.
+
 ## [0.5.0] - 2026-05-12
 
 ### Changed

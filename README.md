@@ -60,10 +60,11 @@ Configure each key's permissions through typed admin fields — no JSON to hand-
 
 | Field | Effect |
 |---|---|
-| `preset` | Role preset: **Read-only**, **Editor** (read + create + update; denies `safeDelete` / `deleteDocument`), **Admin** (all actions), or **Custom** (use the override fields below). Required. Defaults to **Custom** so new keys deny everything until explicitly scoped. |
-| `collectionScopes` | Array of `{ collection, actions[] }`. Only honoured when preset is **Custom**. Each row whitelists a collection and the actions allowed on it. An empty `actions[]` denies all actions on that collection. Listed collections are a *whitelist* — collections not in the list are denied. |
-| `toolAllow` | Multi-select. Only honoured when preset is **Custom**. If set, only these tools are callable with this key. |
-| `toolDeny` | Multi-select. Always applied on top of any preset. Tools listed here are blocked regardless of preset / collection scopes. |
+| `preset` | Role preset: **Read-only**, **Editor** (read + create + update on collections; read-only on globals — see below), **Admin** (all actions on both), or **Custom** (use the override fields below). Required. Defaults to **Custom** so new keys deny everything until explicitly scoped. |
+| `collectionScopes` | Array of `{ collection, actions[] }`. Only honoured when preset is **Custom**. Each row whitelists a collection and the actions (`read` / `create` / `update` / `delete`) allowed on it. An empty `actions[]` denies all actions on that collection. Listed collections are a *whitelist* — collections not in the list are denied. |
+| `globalScopes` | Array of `{ global, actions[] }`. Only honoured when preset is **Custom** *and* the host config has at least one global. Globals only support `read` and `update` (no `create` / `delete` — they're singletons). Same whitelist semantics as `collectionScopes`. |
+| `toolAllow` | Multi-select. Only honoured when preset is **Custom**. If set, only these tools are callable with this key. **Note:** `toolAllow` without an explicit `collectionScopes` / `globalScopes` map or preset is treated as a deny — see [Globals](#globals). |
+| `toolDeny` | Multi-select. Always applied on top of any preset. Tools listed here are blocked regardless of preset / collection / global scopes. |
 
 The collection and tool dropdowns are populated at plugin-init time from your live Payload config + the toolkit's registered tools. Adding a collection or custom tool requires a dev-server / app restart for it to surface in the dropdowns.
 
@@ -110,6 +111,22 @@ The same shape is editable programmatically via Payload's REST and GraphQL APIs 
 - `safeDelete` — relationship-aware delete. Walks the relationship graph; refuses with a structured impact summary if the doc has inbound references. Override with `confirm: true`.
 - `deleteDocument` — fast unsafe delete (no relationship walk). Use only when you know the doc has no inbound references; prefer `safeDelete` for general use.
 
+*Globals* (registered when the host config has at least one global)
+- `findGlobal` — read any global by slug. Stamps a preview URL on draft documents when `admin.livePreview` / `admin.preview` is configured.
+- `updateGlobal` — partial-merge update; same prose JSON contract as `updateDocument`. Draft-enabled globals default to `'always-draft'`.
+- `patchGlobalLayout` — surgical block-array edits on any blocks-typed field inside a global, at any nesting depth (e.g. `footer.sections`). Registered only when at least one global has a blocks field.
+- `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` — registered only for globals with `versions: { drafts: true }`.
+
+## Globals
+
+Globals (site-wide singletons such as site settings, navigation, footer) are exposed alongside collections through the tools listed above and a `globals://schema` resource. The admin UI gains a second "Global scopes" matrix beneath "Collection scopes" under the Custom preset; rows are global slugs, columns are `Read` / `Update`.
+
+### Why `editor` is read-only on globals
+
+The `editor` preset grants read-only access to globals — only `admin` (or a Custom key with explicit `globalScopes`) can write them. Collections under `editor` continue to get `read + create + update`.
+
+The asymmetry exists because globals broadcast site-wide on a single write: site name, footer links, social handles, banner text. A typo in a global is visible on every page that consumes it, with no per-document containment to roll back. Editor-tier keys are typically given to AI agents acting on imperfect natural-language instructions, and `"fix the site title"` going wrong is a one-shot vandalism path against the whole site. If you need editor-tier keys to update specific globals, use the Custom preset with a `globalScopes` entry naming the global slug.
+
 ## Optional configuration
 
 Every option is an escape hatch — pass only what you need:
@@ -155,6 +172,15 @@ contentToolkitPlugin({
 | `domainPrompts` | Site-specific vocabulary prompts. |
 | `mediaUpload.maxFileSize` | Default 10MB. Enforced as a streaming cap, not a post-buffer check. |
 | `mediaUpload.collectionSlug` | Default `'media'`. |
+
+## Upgrading from 0.5
+
+v0.6 adds globals support across the MCP surface. The changes most likely to surprise an upgrade:
+
+- **`editor` preset is read-only on globals.** Editor-tier keys cannot `updateGlobal` or `patchGlobalLayout`. Use the `admin` preset or a Custom key with explicit `globalScopes` for editor-tier writes. See [Why `editor` is read-only on globals](#why-editor-is-read-only-on-globals) for the rationale.
+- **Audit log field rename.** The per-tool audit field `collectionArg` is replaced by `targetSlug` + `targetKind` (`'collection' | 'global' | 'account' | undefined`). Operators with SIEM rules / dashboards filtering on `collectionArg` must update their queries. The old field is gone — there is no compatibility alias, because the original field misreported for global operations.
+- **`tools.allow` without an explicit resource scope is now a deny.** Previously `tools: { allow: ['updateDocument'] }` with no `collections` map and no preset implicitly allowed `updateDocument` on every collection. The fix lands now and applies symmetrically across collections and globals. If your keys rely on the `tools.allow`-only shape (not a documented configuration), add an explicit `collections` / `globals` map or a `preset`.
+- **Production deploys need a migration.** Run `pnpm payload migrate:create` after upgrading to capture the new `globalScopes` JSONB column on `payload-mcp-api-keys`. Local dev with `push: true` syncs on the next `pnpm dev`.
 
 ## Upgrading from 0.3.x
 
