@@ -4,7 +4,7 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0] - 2026-05-12
 
 ### Changed
 - **API-key scopes are now configured via typed admin fields.** The freehand
