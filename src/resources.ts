@@ -2,25 +2,29 @@ import type {
   BlockCatalog,
   BlockNestingMap,
   CollectionSchema,
+  GlobalSchema,
   RelationshipEdge,
 } from './types'
 
 /**
  * Generate MCP resources that expose the introspected schema as static JSON.
  *
- * Four resources:
+ * Resources:
  * - blocks://catalog — flat list of every block and its fields
  * - blocks://nesting — per-blocks-field map of which slugs each field accepts
+ *   (includes global-owned edges when globals contain blocks fields)
  * - collections://schema — collection field metadata
  * - collections://relationships — collection relationship graph
+ * - globals://schema — global field metadata (when any global is registered)
  */
 export function generateResources(
   schemas: Map<string, CollectionSchema>,
   catalog: BlockCatalog,
   nesting: BlockNestingMap,
   relationships: RelationshipEdge[],
+  globalSchemas: Map<string, GlobalSchema> = new Map(),
 ) {
-  return [
+  const resources = [
     buildJsonResource({
       name: 'blockCatalog',
       title: 'Block Catalog',
@@ -33,7 +37,7 @@ export function generateResources(
       name: 'blockNesting',
       title: 'Block Nesting Map',
       description:
-        'For every blocks-typed field in the schema (in collections and inside other blocks), lists the block slugs that field accepts. Use this to compose nested layouts at any depth.',
+        'For every blocks-typed field in the schema (in collections, globals, and inside other blocks), lists the block slugs that field accepts. Use this to compose nested layouts at any depth.',
       uri: 'blocks://nesting',
       payload: nesting,
     }),
@@ -54,6 +58,21 @@ export function generateResources(
       payload: relationships,
     }),
   ]
+
+  if (globalSchemas.size > 0) {
+    resources.push(
+      buildJsonResource({
+        name: 'globalSchema',
+        title: 'Global Schema',
+        description:
+          'JSON schema of all globals — fields, select options, draft and live-preview flags. Globals are singletons addressed by slug; pair with the findGlobal / updateGlobal tools.',
+        uri: 'globals://schema',
+        payload: Object.fromEntries(globalSchemas),
+      }),
+    )
+  }
+
+  return resources
 }
 
 function buildJsonResource(args: {
