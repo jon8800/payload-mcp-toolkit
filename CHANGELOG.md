@@ -4,6 +4,21 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-05-23
+
+### Changed (breaking)
+- **Renamed exported plugin factory `contentToolkitPlugin` → `mcpToolkitPlugin`**
+  so the public symbol matches the package name (`payload-mcp-toolkit`).
+  Update the import + `plugins[]` entry in `payload.config.ts`:
+  ```ts
+  - import { contentToolkitPlugin } from 'payload-mcp-toolkit'
+  + import { mcpToolkitPlugin } from 'payload-mcp-toolkit'
+
+  - plugins: [contentToolkitPlugin()],
+  + plugins: [mcpToolkitPlugin()],
+  ```
+  No options, runtime behaviour, or scope semantics changed — pure rename.
+
 ## [0.6.2] - 2026-05-23
 
 ### Fixed
