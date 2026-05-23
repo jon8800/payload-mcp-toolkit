@@ -15,6 +15,7 @@ export function createResolveReferenceTool(
 ) {
   return {
     name: 'resolveReference',
+    routing: { kind: 'account', action: 'read' } as const,
     description:
       'Search for documents across collections by name, title, or slug. ' +
       'Returns ranked candidates with IDs for use in relationship fields. ' +

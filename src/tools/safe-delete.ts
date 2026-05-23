@@ -50,6 +50,7 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
 
   return {
     name: 'safeDelete',
+    routing: { kind: 'collection', action: 'delete' } as const,
     description:
       'Delete a document only after checking for inbound relationships. ' +
       'If other documents reference the target, the delete is refused unless `confirm` is true. ' +

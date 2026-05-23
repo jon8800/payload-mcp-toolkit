@@ -49,6 +49,7 @@ export function createSchedulePublishTool(
 function buildTool(schedulableSlugs: string[]) {
   return {
     name: 'schedulePublish',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Schedule a draft to be published at a future date by stamping its publishedAt field. ' +
       'The document stays in draft status until your Payload jobs queue (or an external worker) ' +

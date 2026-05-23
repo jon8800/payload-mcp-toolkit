@@ -31,6 +31,7 @@ export function createUpdateGlobalTool(
 
   return {
     name: 'updateGlobal',
+    routing: { kind: 'global', action: 'update' } as const,
     description:
       'Update fields on a global (site-wide settings singleton). ' +
       'Pass only the fields you want to change — unspecified fields are left untouched. ' +

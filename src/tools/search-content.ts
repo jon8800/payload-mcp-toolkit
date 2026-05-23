@@ -34,6 +34,7 @@ export function createSearchContentTool(
 
   return {
     name: 'searchContent',
+    routing: { kind: 'account', action: 'read' } as const,
     description:
       'Search and filter content across collections by status, age, missing fields, or free-text query. ' +
       'Designed for editor triage — finding drafts, stale content, content with missing SEO fields, etc. ' +

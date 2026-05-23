@@ -31,6 +31,7 @@ export function createFindGlobalTool(
 
   return {
     name: 'findGlobal',
+    routing: { kind: 'global', action: 'read' } as const,
     description:
       'Read a global (a singleton site-wide settings document) by slug. ' +
       'Globals carry things like site name, footer config, navigation menus — there is no `id`, no list, no `where` filter. ' +

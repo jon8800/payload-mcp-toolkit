@@ -31,6 +31,7 @@ export function createUpdateDocumentTool(
 
   return {
     name: 'updateDocument',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Update fields on an existing document in any collection. ' +
       'Pass only the fields you want to change — unspecified fields are left untouched. ' +

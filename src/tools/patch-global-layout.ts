@@ -45,6 +45,7 @@ export function createPatchGlobalLayoutTool(
 
   return {
     name: 'patchGlobalLayout',
+    routing: { kind: 'global', action: 'update' } as const,
     description:
       'Surgically modify a blocks-typed field on a global (e.g. footer sections, header nav) without sending the whole array. Same operation grammar as patchLayout. Use the blockNesting resource to see which slugs each field accepts; global-owned edges have ownerType "global".',
     parameters: {

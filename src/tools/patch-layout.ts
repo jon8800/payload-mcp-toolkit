@@ -45,6 +45,7 @@ export function createPatchLayoutTool(
 
   return {
     name: 'patchLayout',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Surgically modify a document\'s blocks-typed field (e.g. "layout") without sending the whole array. Pass the blocks to add/replace plus an operation (append, prepend, insertAt, replaceAt, full). The current array is fetched server-side and the operation is applied atomically. Each block must include a `blockType` plus its fields; nested `blocks`-typed fields can contain arbitrarily-deep block arrays as long as each level matches the schema. Use the `blockNesting` resource to see which slugs each field accepts.',
     parameters: {

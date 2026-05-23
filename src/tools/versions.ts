@@ -19,6 +19,7 @@ const DEFAULT_LIST_LIMIT = 10
 export function createListVersionsTool(draftCollections: Set<string>) {
   return {
     name: 'listVersions',
+    routing: { kind: 'collection', action: 'read' } as const,
     description:
       'List recent saved versions of a document on a draft-enabled collection. ' +
       'Use before restoreVersion to pick the right point in time. ' +
@@ -94,6 +95,7 @@ export function createListVersionsTool(draftCollections: Set<string>) {
 export function createRestoreVersionTool(draftCollections: Set<string>) {
   return {
     name: 'restoreVersion',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Restore a document to a previously saved version. ' +
       'Use listVersions first to find the version ID. ' +

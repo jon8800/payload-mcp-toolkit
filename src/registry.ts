@@ -10,6 +10,20 @@ import { stampMcpContext, type McpTextResponse } from './tools/_helpers'
 
 // ─── Tool / Prompt / Resource shapes ──────────────────────────────────
 
+/**
+ * Discriminated routing tag attached to every tool factory output.
+ *
+ * Collocates the scope-routing decision with the tool definition itself —
+ * the registry derives `TOOL_TO_ACTION` / `TOOL_TO_GLOBAL_ACTION` /
+ * `ACCOUNT_LEVEL_ACTIONS` lookups from `tools` at boot. Adding a new tool
+ * can no longer drift the routing maps out of sync because TS requires
+ * `routing` on every factory return.
+ */
+export type ToolRouting =
+  | { kind: 'collection'; action: CollectionAction }
+  | { kind: 'global'; action: GlobalAction }
+  | { kind: 'account'; action: CollectionAction }
+
 export interface ToolFactoryOutput {
   name: string
   description: string
@@ -23,6 +37,7 @@ export interface ToolFactoryOutput {
     req: PayloadRequest,
     extra: unknown,
   ) => Promise<McpTextResponse> | McpTextResponse
+  routing: ToolRouting
 }
 
 /**

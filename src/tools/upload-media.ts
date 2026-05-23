@@ -20,6 +20,7 @@ export function createUploadMediaTool(options?: {
 
   return {
     name: 'uploadMedia',
+    routing: { kind: 'account', action: 'create' } as const,
     description:
       'Upload an image to the media library from a public HTTPS URL. ' +
       'Fetches the image with SSRF protection, validates it is an allowed image type ' +

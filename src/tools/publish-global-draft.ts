@@ -13,6 +13,7 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
   const slugs = [...draftGlobals]
   return {
     name: 'publishGlobalDraft',
+    routing: { kind: 'global', action: 'update' } as const,
     description:
       'Publish a draft-enabled global by transitioning its _status from "draft" to "published". ' +
       `Draft-enabled globals: ${slugs.join(', ')}`,

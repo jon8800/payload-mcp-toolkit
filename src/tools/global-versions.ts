@@ -14,6 +14,7 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
   const slugs = [...draftGlobals]
   return {
     name: 'listGlobalVersions',
+    routing: { kind: 'global', action: 'read' } as const,
     description:
       'List recent saved versions of a draft-enabled global. ' +
       'Use before restoreGlobalVersion to pick the right point in time. ' +
@@ -87,6 +88,7 @@ export function createRestoreGlobalVersionTool(draftGlobals: Set<string>) {
   const slugs = [...draftGlobals]
   return {
     name: 'restoreGlobalVersion',
+    routing: { kind: 'global', action: 'update' } as const,
     description:
       'Restore a global to a previously saved version. ' +
       'Use listGlobalVersions first to find the version ID. ' +

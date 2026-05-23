@@ -46,6 +46,7 @@ export function createFindDocumentTool(
 
   return {
     name: 'findDocument',
+    routing: { kind: 'collection', action: 'read' } as const,
     description:
       'Read documents from any collection. Pass `id` for a single document, or omit `id` and pass a Payload `where` filter as a JSON string for a list. ' +
       'Draft-enabled collections include a preview URL on draft documents when available.\n\n' +

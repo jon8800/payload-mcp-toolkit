@@ -45,6 +45,7 @@ export function createCreateDocumentTool(
 
   return {
     name: 'createDocument',
+    routing: { kind: 'collection', action: 'create' } as const,
     description:
       'Create a new document in any collection. Pass the field values as a JSON string in `data`. ' +
       'For draft-enabled collections, the document is created as a draft by default — use publishDraft to make it live, ' +

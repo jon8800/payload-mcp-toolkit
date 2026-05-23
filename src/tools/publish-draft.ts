@@ -11,6 +11,7 @@ import {
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {
     name: 'publishDraft',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Publish a draft document by transitioning its _status from "draft" to "published". ' +
       'Only works on collections that support drafts. Use after creating or editing content ' +

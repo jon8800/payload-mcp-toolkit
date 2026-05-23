@@ -27,6 +27,7 @@ export function createDeleteDocumentTool(collectionSchemas: Map<string, Collecti
 
   return {
     name: 'deleteDocument',
+    routing: { kind: 'collection', action: 'delete' } as const,
     description:
       'Delete a document by ID. Skips the inbound-relationship safety check that `safeDelete` performs — use only when you know the document has no inbound references, or when broken relationships are acceptable. Prefer `safeDelete` for general use.\n\n' +
       `Collections: ${deletableSlugs.join(', ')}`,
