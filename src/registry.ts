@@ -202,110 +202,90 @@ function assertScopeAllowsImpl(
     }
   }
 
-  if (resourceKind === 'collection') {
-    return checkCollection(scopes, toolName, resource, tables.collectionToolAction)
+  if (resourceKind === 'account') {
+    return checkAccount(scopes, toolName, tables.accountToolAction)
   }
-  if (resourceKind === 'global') {
-    return checkGlobal(scopes, toolName, resource, tables.globalToolAction)
-  }
-  return checkAccount(scopes, toolName, tables.accountToolAction)
+  const policy = resourceKind === 'collection' ? COLLECTION_POLICY : GLOBAL_POLICY
+  const toolAction =
+    resourceKind === 'collection' ? tables.collectionToolAction : tables.globalToolAction
+  return checkResource(scopes, toolName, resource, toolAction, policy)
 }
 
-function checkCollection(
+/**
+ * Per-resource-kind policy. Collapses what used to be two near-identical
+ * `checkCollection` / `checkGlobal` helpers — the only differences are
+ * the preset-actions table, the label, and which axis of `KeyScopes` to
+ * read for explicit overrides.
+ */
+interface ResourcePolicy {
+  presetActions: Record<ScopePreset, readonly string[]>
+  scopeAxis: 'collections' | 'globals'
+  label: 'collection' | 'global'
+  Label: 'Collection' | 'Global'
+}
+
+const COLLECTION_POLICY: ResourcePolicy = {
+  presetActions: PRESET_ACTIONS,
+  scopeAxis: 'collections',
+  label: 'collection',
+  Label: 'Collection',
+}
+
+const GLOBAL_POLICY: ResourcePolicy = {
+  presetActions: PRESET_GLOBAL_ACTIONS,
+  scopeAxis: 'globals',
+  label: 'global',
+  Label: 'Global',
+}
+
+function checkResource(
   scopes: KeyScopes,
   toolName: string,
-  collection: string | undefined,
-  toolAction: ReadonlyMap<string, CollectionAction>,
+  resource: string | undefined,
+  toolAction: ReadonlyMap<string, string>,
+  policy: ResourcePolicy,
 ): ScopeDecision {
   const action = toolAction.get(toolName)
-  const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
-  const collectionsScope = scopes.collections
+  const presetActions = scopes.preset ? policy.presetActions[scopes.preset] : undefined
+  const resourceScope = scopes[policy.scopeAxis]
 
-  if (!collection) {
-    // Collection-keyed tool called without a slug; defer to schema validation.
+  if (!resource) {
+    // Resource-keyed tool called without a slug; defer to schema validation.
     return { allowed: true }
   }
   if (!action) return { allowed: true }
 
-  if (collectionsScope) {
-    const override = collectionsScope[collection]
+  if (resourceScope) {
+    const override = resourceScope[resource]
     if (!override) {
       return {
         allowed: false,
-        reason: `Collection "${collection}" is not in this API key's allowed collections.`,
+        reason: `${policy.Label} "${resource}" is not in this API key's allowed ${policy.scopeAxis}.`,
       }
     }
-    if (!override.includes(action)) {
+    if (!override.includes(action as never)) {
       return {
         allowed: false,
-        reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's scope.`,
+        reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted by this API key's scope.`,
       }
     }
     return { allowed: true }
   }
 
   if (!presetActions) {
-    // Fail-closed: `tools.allow` without a `collections` map or preset would
-    // otherwise broadcast the tool across every collection. Require explicit
+    // Fail-closed: `tools.allow` without a resource map or preset would
+    // otherwise broadcast the tool across every resource. Require explicit
     // intent.
     return {
       allowed: false,
-      reason: `Tool "${toolName}" requires an explicit collection scope or preset on this API key.`,
+      reason: `Tool "${toolName}" requires an explicit ${policy.label} scope or preset on this API key.`,
     }
   }
 
   if (!presetActions.includes(action)) {
     return {
       allowed: false,
-      reason: `Action "${action}" on collection "${collection}" is not permitted by this API key's preset.`,
-    }
-  }
-  return { allowed: true }
-}
-
-function checkGlobal(
-  scopes: KeyScopes,
-  toolName: string,
-  global: string | undefined,
-  toolAction: ReadonlyMap<string, GlobalAction>,
-): ScopeDecision {
-  const action = toolAction.get(toolName)
-  const presetActions = scopes.preset ? PRESET_GLOBAL_ACTIONS[scopes.preset] : undefined
-  const globalsScope = scopes.globals
-
-  if (!global) {
-    return { allowed: true }
-  }
-  if (!action) return { allowed: true }
-
-  if (globalsScope) {
-    const override = globalsScope[global]
-    if (!override) {
-      return {
-        allowed: false,
-        reason: `Global "${global}" is not in this API key's allowed globals.`,
-      }
-    }
-    if (!override.includes(action)) {
-      return {
-        allowed: false,
-        reason: `Action "${action}" on global "${global}" is not permitted by this API key's scope.`,
-      }
-    }
-    return { allowed: true }
-  }
-
-  if (!presetActions) {
-    return {
-      allowed: false,
-      reason: `Tool "${toolName}" requires an explicit global scope or preset on this API key.`,
-    }
-  }
-
-  if (!presetActions.includes(action)) {
-    return {
-      allowed: false,
-      reason: `Action "${action}" on global "${global}" is not permitted by this API key's preset.`,
+      reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted by this API key's preset.`,
     }
   }
   return { allowed: true }
