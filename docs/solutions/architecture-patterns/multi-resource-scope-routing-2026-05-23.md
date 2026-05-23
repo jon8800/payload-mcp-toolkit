@@ -1,6 +1,7 @@
 ---
 title: Route MCP tool scopes through three disjoint sets with a boot-time invariant, asymmetric per-resource presets, and a widened deny-all sentinel
 date: 2026-05-23
+last_updated: 2026-05-23
 category: docs/solutions/architecture-patterns
 module: payload-mcp-toolkit
 problem_type: architecture_pattern
@@ -30,42 +31,55 @@ This skill captures the three-decision cluster that resolved this — they are c
 
 ## Guidance
 
-### 1. Three disjoint routing sets, validated at boot
+### 1. Three disjoint routing sets, enforced by the type system at the factory return site
 
-Don't try to encode "which scope map does this tool consult?" inside a single record. Use three module-scope sets and resolve at request time:
+Don't try to encode "which scope map does this tool consult?" in a separate registry maintained alongside the tool list — the registry drifts. Collocate the routing decision with the tool definition itself. Every tool factory returns a `routing` field that the registry derives lookup tables from at boot:
 
 ```ts
-export const TOOL_TO_ACTION:        Record<string, CollectionAction> // per-collection
-export const TOOL_TO_GLOBAL_ACTION: Record<string, GlobalAction>     // per-global
-export const ACCOUNT_LEVEL_TOOLS:   ReadonlySet<string>              // no resource arg
+// src/scope/policy.ts
+export type ToolRouting =
+  | { kind: 'collection'; action: CollectionAction }
+  | { kind: 'global';     action: GlobalAction }
+  | { kind: 'account';    action: CollectionAction }
 
-export function resolveResourceKind(toolName: string): ResourceKind | null {
-  if (toolName in TOOL_TO_ACTION) return 'collection'
-  if (toolName in TOOL_TO_GLOBAL_ACTION) return 'global'
-  if (ACCOUNT_LEVEL_TOOLS.has(toolName)) return 'account'
-  return null  // fail-closed at request time
+export interface RoutableTool {
+  name: string
+  routing: ToolRouting
+}
+
+export function buildRoutingTables(tools: RoutableTool[]): RoutingTables {
+  const collectionToolAction = new Map<string, CollectionAction>()
+  const globalToolAction     = new Map<string, GlobalAction>()
+  const accountToolAction    = new Map<string, CollectionAction>()
+  const toolKind             = new Map<string, ResourceKind>()
+  for (const t of tools) {
+    toolKind.set(t.name, t.routing.kind)
+    if      (t.routing.kind === 'collection') collectionToolAction.set(t.name, t.routing.action)
+    else if (t.routing.kind === 'global')     globalToolAction.set(t.name, t.routing.action)
+    else                                       accountToolAction.set(t.name, t.routing.action)
+  }
+  return { collectionToolAction, globalToolAction, accountToolAction, toolKind }
 }
 ```
 
-`assertScopeAllows` takes `resourceKind` as a parameter rather than re-deriving it inside the function. Three reasons:
+Each tool factory carries its own routing literal:
+
+```ts
+// src/tools/update-global.ts
+return {
+  name: 'updateGlobal',
+  routing: { kind: 'global', action: 'update' } as const,
+  // …
+}
+```
+
+`assertScopeAllows` reads `toolKind` from the prebuilt tables at request time; it does not re-derive routing from the tool name. Three reasons this matters:
 
 - **Audit log correctness.** `targetKind: 'collection' | 'global' | 'account'` is populated from the routing lookup at the call site; denials report the correct resource type instead of mislabelling globals as collections.
 - **Error message correctness.** Reason strings interpolate the kind (`Global "X"…` vs. `Collection "X"…` vs. `Action "X"…` for account-level).
-- **Disjointness is enforceable.** A tool in two sets is ambiguous — there's no defensible auto-resolution. Making it a boot-time error forces the operator to decide.
+- **Drift is impossible.** A tool factory that forgets `routing` is a TS error at the factory return site, not a boot-time check or a request-time denial. The earlier v0.6 design used explicit `TOOL_TO_ACTION` maps plus an `assertScopeRegistryInvariant` boot check; both were removed once `routing` was collocated, because the TS-enforced shape closed the drift mode they existed to catch.
 
-Pair this with a plugin-init invariant:
-
-```ts
-export function assertScopeRegistryInvariant(toolNames: string[]): void {
-  // every name must appear in exactly one of the three sets
-  // missing → "forgot to register" → fail boot with the offender named
-  // duplicate → ambiguous routing → fail boot with the offender named
-}
-```
-
-Called once from the plugin entry after the tool list is assembled. A registered-but-unrouted tool is the single most common drift mode when adding new tools, and the cost of catching it at boot instead of at the first denied request is zero.
-
-**Belt-and-braces:** `resolveResourceKind` returning `null` at request time still produces a denial (`Tool "X" has no registered scope mapping`), so a future regression that disables the boot check still fails closed.
+**Belt-and-braces:** `tables.toolKind.get(toolName)` returning `undefined` at request time still produces a denial (`Tool "X" has no registered scope mapping`) — so an unknown tool name sent by the client fails closed even though the TS contract prevents the factory-side drift mode.
 
 ### 2. Preset semantics are per-resource-kind, not uniform
 
@@ -149,24 +163,27 @@ A key with `tools: { allow: ['updateDocument'] }`, no `collections` map, and no 
 
 When adding a new resource kind (e.g. `forms`, `redirects`, `media-folders`) to this plugin:
 
-1. **Add a new routing set.** `TOOL_TO_<KIND>_ACTION: Record<string, <Kind>Action>` in `src/registry.ts`. Add to the `resolveResourceKind` branch. Update `ResourceKind` type union.
-2. **Add a new preset map.** `PRESET_<KIND>_ACTIONS`. Decide per-preset by blast radius, not by analogy with collections.
-3. **Add a new `check<Kind>` function.** Copy `checkCollection` or `checkGlobal`; preserve the fail-closed pattern — every branch ends in explicit allow or explicit deny, no `if (x && ...)` patterns where `undefined` silently passes.
-4. **Widen the sentinel.** `composeScopes`: add `!has<Kind>Scopes` to the predicate AND `<kind>: {}` to the returned shape. Update tests.
-5. **Update the audit log shape.** `targetKind` union gains the new value. Document in CHANGELOG if log queries are downstream.
-6. **Update `assertScopeRegistryInvariant`.** It picks up the new set automatically because it iterates over names — but add a test exercising membership in the new set.
+1. **Extend the routing type.** Add a new arm to the `ToolRouting` union in `src/scope/policy.ts` (`| { kind: '<newKind>'; action: <Kind>Action }`). Update the `ResourceKind` union. TS now refuses any tool factory that returns the old shape — every factory has to opt into the new arm or stay on an existing one.
+2. **Wire the new arm into `buildRoutingTables`.** Add a `<newKind>ToolAction` map and an `else if (t.routing.kind === '<newKind>')` branch. Plumb the new map through `RoutingTables`.
+3. **Add a new preset map.** `PRESET_<KIND>_ACTIONS`. Decide per-preset by blast radius, not by analogy with collections.
+4. **Add a new `ResourcePolicy` constant** alongside `COLLECTION_POLICY` / `GLOBAL_POLICY` and dispatch to it from `assertScopeAllows`. `checkResource` is generic over the policy — only the new constant is needed, not a new branch function. (The v0.6 codebase collapsed `checkCollection` / `checkGlobal` into a single parameterised `checkResource`; preserve that.)
+5. **Tag every new tool factory** with `routing: { kind: '<newKind>'; action: '…' } as const`. The `as const` matters — without it the literal widens and `ToolRouting`'s discriminant disappears.
+6. **Widen the sentinel.** `composeScopes` in `src/auth-strategy.ts`: add `!has<Kind>Scopes` to the predicate AND `<kind>: {}` to the returned shape. Update tests.
+7. **Update the audit log shape.** `targetKind` union gains the new value. Document in CHANGELOG if log queries are downstream.
 
 When porting this pattern to another framework plugin:
 
-- Treat the three-set split as the default. Even if you start with one resource kind, name the set with the kind in it (`TOOL_TO_DOCUMENT_ACTION`) — the rename cost when the second kind arrives is what makes teams cheat.
+- Treat the discriminated `routing` field as the default — collocate routing with each tool/handler instead of maintaining a separate registry that drifts. A boot-time invariant is a worse version of the TS-enforced shape; only fall back to a runtime invariant if the host language has no discriminated unions.
 - Treat per-resource preset maps as the default. Even if today's presets happen to be uniform, the named maps document that uniformity is a choice rather than an assumption.
 - The sentinel pattern generalises to any "operator selected a special mode but didn't fill it in" UX. The principle: a UI sentinel value (`'custom'`) should never become the runtime mode; it gates the override pathway, and an empty override pathway is fail-closed, not fall-through.
 
 ## Related
 
 - [[mcp-auth-bypass-and-scope-fail-open-2026-05-05]] — the v0.4 fail-open class the sentinel and the per-resource fail-closed branches close. The widened sentinel is the same pattern applied symmetrically to a new axis.
+- [[scope-bypass-account-tools-and-globals-exclusion-leak]] — v0.6.1 follow-up that closes a preset-plus-override combinatorial case in `checkAccount`; the same fail-closed posture this pattern codifies, applied to the account branch.
 - [[payload-plugin-config-inference-2026-05-04]] — the introspection-from-host-config pattern that produces the `availableGlobals` array the matrix consumes. Per-resource scope routing only works because the toolkit reads what globals the host declares; it doesn't ask the operator to list them twice.
 - [[block-nesting-map-unified-ownership-2026-05-23]] — companion pattern for unifying composition lookups across resource kinds while preserving collision detection.
 - `docs/plans/2026-05-12-001-feat-globals-support-plan.md` — the plan that introduced these decisions, including the architectural review counter-arguments that the security-blast-radius case overrode.
-- `src/registry.ts` — current implementation; the three sets, the invariant, and the three `check*` functions live in one file by design (they share the fail-closed contract).
+- `src/scope/policy.ts` — current implementation; the `ToolRouting` union, `buildRoutingTables`, `assertScopeAllows`, `checkResource`, `checkAccount`, the per-preset action maps, and the `COLLECTION_POLICY` / `GLOBAL_POLICY` constants all live in one file by design (they share the fail-closed contract).
+- `src/scope/audit-log.ts` — `targetKind` and the safe audit logger.
 - `src/auth-strategy.ts` — `composeScopes` and the widened deny-all sentinel.
