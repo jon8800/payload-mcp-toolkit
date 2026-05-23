@@ -162,20 +162,28 @@ describe('createApiKeysCollection', () => {
       'siteSettings',
       'footer',
     ])
-    // Conditional render: only Custom preset AND availableGlobals.length > 0
+    // Conditional render mirrors collectionScopes: Custom preset only. The
+    // empty-config case is handled inside ScopesTable's empty-state render,
+    // not by gating the field's admin.condition.
     expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
     expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
   })
 
-  it('omits the globalScopes matrix from the form when no globals are available', () => {
+  it('renders the globalScopes field under Custom even when no globals are available', () => {
+    // No `availableGlobals.length > 0` gate — the matrix component renders
+    // its own empty-state copy ("No globals are available…") so operators
+    // see why the table is blank instead of seeing nothing at all.
     const collection = createApiKeysCollection({ ...baseOptions })
     const scopes = findNamed(collection.fields as Field[], 'globalScopes') as {
-      admin?: { condition?: (data: unknown) => boolean }
+      admin?: {
+        condition?: (data: unknown) => boolean
+        components?: { Field?: { clientProps?: { availableGlobals?: string[] } } }
+      }
     }
-    // Field is still registered (so its column exists), but the admin condition
-    // is false even under Custom so no UI flickers in for empty configs.
     expect(scopes).toBeDefined()
-    expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(false)
+    expect(scopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(scopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
+    expect(scopes.admin?.components?.Field?.clientProps?.availableGlobals).toEqual([])
   })
 
   it('createApiKeysCollection accepts options without availableGlobals (back-compat)', () => {

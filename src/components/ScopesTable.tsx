@@ -9,13 +9,14 @@ import { toWords } from 'payload/shared'
  *
  * Used by both CollectionScopesMatrix (collections × 4 actions) and
  * GlobalScopesMatrix (globals × 2 actions). The stored shape is
- * `Array<{ [itemKey]: string; actions: string[] }>` — the key field name
- * differs ("collection" vs "global") so the caller supplies it.
+ * `Array<{ slug: string; actions: string[] }>` — the parent field name
+ * (`collectionScopes` vs `globalScopes`) already encodes which axis the
+ * slugs belong to, so the row payload no longer mirrors that distinction.
  */
 
 interface RowValue {
-  [key: string]: unknown
-  actions?: string[]
+  slug?: unknown
+  actions?: unknown
 }
 type MatrixValue = RowValue[]
 
@@ -27,8 +28,6 @@ export interface ScopesTableProps {
   actions: string[]
   /** Display label per action (e.g. { read: 'Read', update: 'Update' }). */
   actionLabels: Record<string, string>
-  /** Field name used as the row key (e.g. "collection" or "global"). */
-  itemKey: string
   /** Header label for the leftmost column. */
   itemHeader: string
   /** Page-level title rendered above the table. */
@@ -41,14 +40,13 @@ export interface ScopesTableProps {
 
 function rowsToMap(
   value: MatrixValue | null | undefined,
-  itemKey: string,
   allowedActions: Set<string>,
 ): Map<string, Set<string>> {
   const map = new Map<string, Set<string>>()
   if (!Array.isArray(value)) return map
   for (const row of value) {
-    if (!row || typeof row[itemKey] !== 'string') continue
-    const slug = row[itemKey] as string
+    if (!row || typeof row.slug !== 'string') continue
+    const slug = row.slug
     const actions = new Set<string>()
     if (Array.isArray(row.actions)) {
       for (const a of row.actions) {
@@ -64,14 +62,13 @@ function mapToRows(
   map: Map<string, Set<string>>,
   items: string[],
   actions: string[],
-  itemKey: string,
 ): MatrixValue {
   const rows: MatrixValue = []
   for (const slug of items) {
     const set = map.get(slug)
     if (!set || set.size === 0) continue
     rows.push({
-      [itemKey]: slug,
+      slug,
       actions: actions.filter((a) => set.has(a)),
     })
   }
@@ -103,8 +100,8 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
   const allowedActionsSet = React.useMemo(() => new Set(props.actions), [props.actions])
 
   const map = React.useMemo(
-    () => rowsToMap(value, props.itemKey, allowedActionsSet),
-    [value, props.itemKey, allowedActionsSet],
+    () => rowsToMap(value, allowedActionsSet),
+    [value, allowedActionsSet],
   )
 
   const update = React.useCallback(
@@ -112,9 +109,9 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
       const next = new Map<string, Set<string>>()
       for (const [k, v] of map) next.set(k, new Set(v))
       mutator(next)
-      setValue(mapToRows(next, props.items, props.actions, props.itemKey))
+      setValue(mapToRows(next, props.items, props.actions))
     },
-    [map, props.items, props.actions, props.itemKey, setValue],
+    [map, props.items, props.actions, setValue],
   )
 
   const isCellChecked = (slug: string, action: string): boolean =>

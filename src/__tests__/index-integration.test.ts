@@ -96,14 +96,23 @@ describe('contentToolkitPlugin integration', () => {
     expect(slugs).not.toContain('payload-mcp-api-keys')
   })
 
-  it('a host config with no globals registers no global tools and no global resource', () => {
+  it('a host config with no globals still registers the globalScopes field (matrix shows empty state)', () => {
     const cfg = contentToolkitPlugin()(baseConfig())
-    // The api-keys collection's globalScopes condition reports back the absence:
+    // The field always renders under Custom; the matrix component reports
+    // the absence via its own empty-state copy when availableGlobals is [].
     const apiKeys = (cfg.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
-      fields: Array<{ name?: string; admin?: { condition?: (data: unknown) => boolean } }>
+      fields: Array<{
+        name?: string
+        admin?: {
+          condition?: (data: unknown) => boolean
+          components?: { Field?: { clientProps?: { availableGlobals?: string[] } } }
+        }
+      }>
     }
     const globalScopes = apiKeys.fields.find((f) => f.name === 'globalScopes')!
-    expect(globalScopes.admin?.condition?.({ preset: 'custom' })).toBe(false)
+    expect(globalScopes.admin?.condition?.({ preset: 'custom' })).toBe(true)
+    expect(globalScopes.admin?.condition?.({ preset: 'editor' })).toBe(false)
+    expect(globalScopes.admin?.components?.Field?.clientProps?.availableGlobals).toEqual([])
   })
 
   it('a host config with one plain global makes globalScopes UI render under Custom', () => {

@@ -13,12 +13,18 @@ export interface CreateBearerStrategyOptions {
   userCollection: string
 }
 
-interface CollectionScopeRow {
+/**
+ * Stored shape for a row in `collectionScopes` / `globalScopes` (v0.6+).
+ * The parent field name encodes the axis — collection-vs-global is not
+ * repeated in the row payload. Legacy `collection` / `global` keys from
+ * pre-0.6 rows are tolerated by `composeScopes` for one release; v0.7
+ * drops the fallback (see CHANGELOG).
+ */
+interface ScopeRow {
+  slug?: unknown
+  /** @deprecated pre-0.6 collectionScopes shape — read via fallback only. */
   collection?: unknown
-  actions?: unknown
-}
-
-interface GlobalScopeRow {
+  /** @deprecated pre-0.6 globalScopes shape — read via fallback only. */
   global?: unknown
   actions?: unknown
 }
@@ -27,14 +33,41 @@ interface ApiKeyRow {
   id: string | number
   user: unknown
   preset?: ScopePreset | 'custom' | null
-  collectionScopes?: CollectionScopeRow[] | null
-  globalScopes?: GlobalScopeRow[] | null
+  collectionScopes?: ScopeRow[] | null
+  globalScopes?: ScopeRow[] | null
   toolAllow?: string[] | null
   toolDeny?: string[] | null
   expiresAt?: string | Date | null
   revokedAt?: string | Date | null
   apiKey?: string | null
   keyPrefix?: string | null
+}
+
+/**
+ * Reads the row's slug, tolerating the pre-0.6 `collection` / `global`
+ * keys for one release. Logs a one-line warn when the legacy fallback
+ * fires so operators can spot keys that need re-saving. The fallback is
+ * scheduled for removal in v0.7.
+ */
+let warnedLegacyShape = false
+function readScopeSlug(
+  entry: ScopeRow,
+  legacyKey: 'collection' | 'global',
+  logger?: { warn?: (...args: unknown[]) => void } | undefined,
+): string | null {
+  if (typeof entry?.slug === 'string') return entry.slug
+  const legacy = entry?.[legacyKey]
+  if (typeof legacy === 'string') {
+    if (!warnedLegacyShape) {
+      warnedLegacyShape = true
+      logger?.warn?.(
+        { event: 'mcp.auth.legacy_scope_shape', legacyKey },
+        `[payload-mcp-toolkit] composeScopes read a pre-0.6 row using \`${legacyKey}\`; resave the API key to migrate to {slug, actions}. The fallback is removed in v0.7.`,
+      )
+    }
+    return legacy
+  }
+  return null
 }
 
 const VALID_ACTIONS: ReadonlySet<CollectionAction> = new Set(['read', 'create', 'update', 'delete'])
@@ -58,7 +91,10 @@ const VALID_GLOBAL_ACTIONS: ReadonlySet<GlobalAction> = new Set(['read', 'update
  *     `toolAllow` / `toolDeny`) are honoured as written — the deny-all
  *     sentinel only fires when ALL override fields are empty.
  */
-export function composeScopes(row: ApiKeyRow): KeyScopes | null {
+export function composeScopes(
+  row: ApiKeyRow,
+  logger?: { warn?: (...args: unknown[]) => void },
+): KeyScopes | null {
   const presetRaw = row.preset
   const hasPreset = typeof presetRaw === 'string' && presetRaw.length > 0
   const collectionScopes = Array.isArray(row.collectionScopes) ? row.collectionScopes : []
@@ -101,7 +137,7 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
   if (hasCollectionScopes) {
     const collections: Record<string, CollectionAction[]> = {}
     for (const entry of collectionScopes) {
-      const slug = typeof entry?.collection === 'string' ? entry.collection : null
+      const slug = readScopeSlug(entry, 'collection', logger)
       if (!slug) continue
       const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
       const actions = rawActions.filter(
@@ -116,7 +152,7 @@ export function composeScopes(row: ApiKeyRow): KeyScopes | null {
   if (hasGlobalScopes) {
     const globals: Record<string, GlobalAction[]> = {}
     for (const entry of globalScopes) {
-      const slug = typeof entry?.global === 'string' ? entry.global : null
+      const slug = readScopeSlug(entry, 'global', logger)
       if (!slug) continue
       const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
       const actions = rawActions.filter(
@@ -195,7 +231,7 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       const linkedUser = row.user
       if (!linkedUser || typeof linkedUser !== 'object') return { user: null }
 
-      const effectiveScopes: KeyScopes | null = composeScopes(row)
+      const effectiveScopes: KeyScopes | null = composeScopes(row, payload.logger)
 
       // Fire-and-forget: do not block the request on this write.
       void payload

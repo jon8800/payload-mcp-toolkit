@@ -66,7 +66,7 @@ describe('composeScopes', () => {
     const out = composeScopes({
       ...baseRow,
       preset: 'custom',
-      collectionScopes: [{ collection: 'posts', actions: ['read', 'create'] }],
+      collectionScopes: [{ slug: 'posts', actions: ['read', 'create'] }],
     })
     expect(out).toEqual({
       collections: { posts: ['read', 'create'] },
@@ -98,7 +98,7 @@ describe('composeScopes', () => {
     const out = composeScopes({
       ...baseRow,
       preset: 'custom',
-      collectionScopes: [{ collection: 'posts', actions: [] }],
+      collectionScopes: [{ slug: 'posts', actions: [] }],
     })
     expect(out).toEqual({ collections: { posts: [] } })
   })
@@ -108,7 +108,7 @@ describe('composeScopes', () => {
       ...baseRow,
       preset: 'custom',
       collectionScopes: [
-        { collection: 'posts', actions: ['read', 'bogus', 1, 'update'] as unknown as string[] },
+        { slug: 'posts', actions: ['read', 'bogus', 1, 'update'] as unknown as string[] },
       ],
     })
     expect(out).toEqual({ collections: { posts: ['read', 'update'] } })
@@ -121,8 +121,8 @@ describe('composeScopes', () => {
       ...baseRow,
       preset: 'custom',
       globalScopes: [
-        { global: 'siteSettings', actions: ['read', 'update'] },
-        { global: 'footer', actions: ['read'] },
+        { slug: 'siteSettings', actions: ['read', 'update'] },
+        { slug: 'footer', actions: ['read'] },
       ],
     })
     expect(out).toEqual({
@@ -135,7 +135,7 @@ describe('composeScopes', () => {
       ...baseRow,
       preset: 'custom',
       globalScopes: [
-        { global: 'siteSettings', actions: ['read', 'create', 'delete', 'update'] as unknown as string[] },
+        { slug: 'siteSettings', actions: ['read', 'create', 'delete', 'update'] as unknown as string[] },
       ],
     })
     // Only read/update are valid on globals — create/delete dropped.
@@ -169,7 +169,7 @@ describe('composeScopes', () => {
     const out = composeScopes({
       ...baseRow,
       preset: 'custom',
-      globalScopes: [{ global: 'siteSettings', actions: ['read'] }],
+      globalScopes: [{ slug: 'siteSettings', actions: ['read'] }],
     })
     expect(out).toEqual({ globals: { siteSettings: ['read'] } })
   })
@@ -183,6 +183,50 @@ describe('composeScopes', () => {
     expect(out).toEqual({
       tools: { allow: ['findDocument', 'searchContent'], deny: ['deleteDocument'] },
     })
+  })
+
+  // ─── Legacy row-shape fallback (pre-0.6 → 0.6 transition) ─────────
+  //
+  // The {slug, actions} normalization landed mid-0.6 — pre-existing
+  // {collection, actions} / {global, actions} rows are tolerated for one
+  // release so locally-tested 0.6 fixtures keep authenticating. The
+  // fallback is removed in v0.7.
+
+  it('falls back to row.collection when row.slug is missing (legacy collectionScopes)', () => {
+    const warn = vi.fn()
+    const out = composeScopes(
+      {
+        ...baseRow,
+        preset: 'custom',
+        collectionScopes: [{ collection: 'posts', actions: ['read'] } as never],
+      },
+      { warn },
+    )
+    expect(out).toEqual({ collections: { posts: ['read'] } })
+  })
+
+  it('falls back to row.global when row.slug is missing (legacy globalScopes)', () => {
+    const warn = vi.fn()
+    const out = composeScopes(
+      {
+        ...baseRow,
+        preset: 'custom',
+        globalScopes: [{ global: 'siteSettings', actions: ['read'] } as never],
+      },
+      { warn },
+    )
+    expect(out).toEqual({ globals: { siteSettings: ['read'] } })
+  })
+
+  it('prefers row.slug over the legacy row.collection key when both are set', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: [
+        { slug: 'posts', collection: 'stale-slug', actions: ['read'] } as never,
+      ],
+    })
+    expect(out).toEqual({ collections: { posts: ['read'] } })
   })
 })
 
@@ -314,7 +358,7 @@ describe('createBearerStrategy.authenticate', () => {
           user: { id: 'u3' },
           keyPrefix: 'deadbeef',
           preset: 'custom',
-          collectionScopes: [{ collection: 'posts', actions: ['read', 'update'] }],
+          collectionScopes: [{ slug: 'posts', actions: ['read', 'update'] }],
           toolDeny: ['safeDelete'],
         },
       ],

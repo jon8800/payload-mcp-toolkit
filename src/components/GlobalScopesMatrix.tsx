@@ -23,7 +23,6 @@ function GlobalScopesMatrix(props: GlobalScopesMatrixProps): React.ReactElement 
       items={items}
       actions={ACTIONS}
       actionLabels={ACTION_LABELS}
-      itemKey="global"
       itemHeader="Global"
       title="Global scopes"
       description='Check the actions this key may perform on each global. Globals only support Read and Update (singletons cannot be created or deleted). Only honoured when the preset is "Custom".'

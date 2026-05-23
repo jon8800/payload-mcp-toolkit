@@ -25,7 +25,6 @@ function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.React
       items={items}
       actions={ACTIONS}
       actionLabels={ACTION_LABELS}
-      itemKey="collection"
       itemHeader="Collection"
       title="Collection scopes"
       description='Check the actions this key may perform on each collection. Unchecked rows are denied outright. Only honoured when the preset is "Custom".'

@@ -93,7 +93,7 @@ export function createApiKeysCollection(
     },
   }
 
-  // Stored shape: Array<{ collection: string; actions: ('read'|'create'|'update'|'delete')[] }>
+  // Stored shape: Array<{ slug: string; actions: ('read'|'create'|'update'|'delete')[] }>
   // The default Payload UI for an `array` would force users to add rows
   // one at a time; the custom matrix component renders all available
   // collections at once with a checkbox grid (rows × actions).
@@ -121,12 +121,15 @@ export function createApiKeysCollection(
   // Mirrors `collectionScopes` exactly — one additive JSONB column with a
   // default of `'[]'`, default-rendered by `GlobalScopesMatrix`. Hidden
   // under non-custom presets. Stored shape:
-  //   Array<{ global: string; actions: ('read'|'update')[] }>
+  //   Array<{ slug: string; actions: ('read'|'update')[] }>
+  // No `availableGlobals.length > 0` gate: `ScopesTable` renders its own
+  // empty-state message when zero items are passed, so the field surfaces
+  // under Custom regardless of host config, matching the collection variant.
   const globalScopesField: Field = {
     name: 'globalScopes',
     type: 'json',
     admin: {
-      condition: (data: unknown) => isCustomPreset(data) && availableGlobals.length > 0,
+      condition: isCustomPreset,
       components: {
         Field: {
           path: 'payload-mcp-toolkit/client',

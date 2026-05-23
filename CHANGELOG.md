@@ -69,6 +69,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   key`. Operators relying on the `tools.allow`-only shape (not a documented
   configuration) must add an explicit `collections` / `globals` map or a
   preset.
+- **`collectionScopes` and `globalScopes` JSONB columns now store rows shaped
+  `{slug, actions}`** (previously `{collection, actions}` / `{global, actions}`).
+  composeScopes accepts both shapes for one release; v0.7 will drop the
+  legacy fallback. The shape change unifies the two scope axes under one
+  `ScopeRow` interface, dropping the `ScopesTable` `itemKey` prop.
 - **`scopes.collectionArg` log field is gone** (covered above).
 - **`BlockNestingEdge.ownerType` (exported TS type) widened** from
   `'collection' | 'block'` to `'collection' | 'block' | 'global'`. Downstream
