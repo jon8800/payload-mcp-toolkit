@@ -127,7 +127,11 @@ async function resolveGlobalPreviewUrl(
         payload: req.payload,
         globalConfig: global,
       })
-    } catch {
+    } catch (err) {
+      req.payload.logger?.warn?.(
+        { err, slug: global.slug },
+        `[payload-mcp-toolkit] admin.livePreview.url threw for global "${global.slug}"`,
+      )
       raw = null
     }
   } else if (typeof livePreviewUrl === 'string') {
@@ -137,7 +141,11 @@ async function resolveGlobalPreviewUrl(
   if (!raw && typeof admin.preview === 'function') {
     try {
       raw = await admin.preview(doc, { locale, req, token: null })
-    } catch {
+    } catch (err) {
+      req.payload.logger?.warn?.(
+        { err, slug: global.slug },
+        `[payload-mcp-toolkit] admin.preview threw for global "${global.slug}"`,
+      )
       raw = null
     }
   }

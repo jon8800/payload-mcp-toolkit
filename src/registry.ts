@@ -471,8 +471,25 @@ export function createInitializeServer(
           targetSlug,
           resourceKind,
         )
+        // Audit-log writes must never break the tool dispatch path. A
+        // throwing logger transport (closed stream during HMR, custom pino
+        // dest) would otherwise flip a success to isError or mask the real
+        // tool error. Swallow logger exceptions here.
+        const safeLog = (
+          level: 'info' | 'warn' | 'error',
+          payload: Record<string, unknown>,
+          message: string,
+        ) => {
+          try {
+            logger?.[level]?.(payload, message)
+          } catch {
+            // Logger transport failure must not break dispatch.
+          }
+        }
+
         if (!decision.allowed) {
-          logger?.warn?.(
+          safeLog(
+            'warn',
             {
               event: 'mcp.tool_call',
               keyId: keyCtx?.keyId,
@@ -496,7 +513,8 @@ export function createInitializeServer(
 
         try {
           const result = await tool.handler(args, req, extra)
-          logger?.info?.(
+          safeLog(
+            'info',
             {
               event: 'mcp.tool_call',
               keyId: keyCtx?.keyId,
@@ -516,7 +534,8 @@ export function createInitializeServer(
         } catch (err) {
           const errorClass = err instanceof Error ? err.name : 'UnknownError'
           const message = err instanceof Error ? err.message : String(err)
-          logger?.error?.(
+          safeLog(
+            'error',
             {
               event: 'mcp.tool_call',
               err,

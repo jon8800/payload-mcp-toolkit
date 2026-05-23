@@ -34,12 +34,18 @@ export function createPatchGlobalLayoutTool(
   // Conditional registration: no global has a blocks field → no tool.
   if (nestingByGlobalField.size === 0) return null
 
+  const patchableSlugs = [...new Set([...nestingByGlobalField.keys()].map((k) => k.split(':')[0]))]
+
   return {
     name: 'patchGlobalLayout',
     description:
       'Surgically modify a blocks-typed field on a global (e.g. footer sections, header nav) without sending the whole array. Same operation grammar as patchLayout. Use the blockNesting resource to see which slugs each field accepts; global-owned edges have ownerType "global".',
     parameters: {
-      slug: z.string().describe('The global slug whose blocks-typed field will be patched'),
+      slug: z
+        .enum(patchableSlugs as [string, ...string[]])
+        .describe(
+          `The global slug whose blocks-typed field will be patched. One of: ${patchableSlugs.join(', ')}`,
+        ),
       layoutField: z
         .string()
         .describe(

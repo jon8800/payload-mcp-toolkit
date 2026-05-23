@@ -70,6 +70,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   configuration) must add an explicit `collections` / `globals` map or a
   preset.
 - **`scopes.collectionArg` log field is gone** (covered above).
+- **`BlockNestingEdge.ownerType` (exported TS type) widened** from
+  `'collection' | 'block'` to `'collection' | 'block' | 'global'`. Downstream
+  code consuming the `blocks://nesting` resource or the typed export via
+  exhaustive `switch` / discriminated-union narrowing must add a `'global'`
+  arm or a default branch. Runtime behaviour is unchanged for code that
+  ignores the new ownerType — existing collection/block edges still emit
+  with their original values.
 
 ### Migration
 - Production deploys must run `pnpm payload migrate:create` after upgrading
