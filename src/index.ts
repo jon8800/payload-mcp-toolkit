@@ -160,7 +160,7 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       }
     }
 
-    const tools: ToolFactoryOutput[] = ([
+    const tools: ToolFactoryOutput[] = [
       createCreateDocumentTool(exposedSchemas, draftCollections),
       createDeleteDocumentTool(exposedSchemas),
       createFindDocumentTool(
@@ -182,10 +182,10 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       }),
       createListVersionsTool(draftCollections),
       createRestoreVersionTool(draftCollections),
-    ] as unknown) as ToolFactoryOutput[]
+    ]
 
     const schedulePublish = createSchedulePublishTool(exposedSchemas, draftCollections)
-    if (schedulePublish) tools.push(schedulePublish as unknown as ToolFactoryOutput)
+    if (schedulePublish) tools.push(schedulePublish)
 
     // Global tools — registered only when at least one global is exposed.
     if (exposedGlobalSchemas.size > 0) {
@@ -196,21 +196,21 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
           globalsBySlug,
           previewSiteUrl,
           previewDisabled,
-        ) as unknown as ToolFactoryOutput,
-        createUpdateGlobalTool(exposedGlobalSchemas, draftGlobals) as unknown as ToolFactoryOutput,
+        ),
+        createUpdateGlobalTool(exposedGlobalSchemas, draftGlobals),
       )
 
       const patchGlobalLayout = createPatchGlobalLayoutTool(blockCatalog, blockNesting, draftGlobals)
-      if (patchGlobalLayout) tools.push(patchGlobalLayout as unknown as ToolFactoryOutput)
+      if (patchGlobalLayout) tools.push(patchGlobalLayout)
 
       const publishGlobalDraft = createPublishGlobalDraftTool(draftGlobals)
-      if (publishGlobalDraft) tools.push(publishGlobalDraft as unknown as ToolFactoryOutput)
+      if (publishGlobalDraft) tools.push(publishGlobalDraft)
 
       const listGlobalVersions = createListGlobalVersionsTool(draftGlobals)
-      if (listGlobalVersions) tools.push(listGlobalVersions as unknown as ToolFactoryOutput)
+      if (listGlobalVersions) tools.push(listGlobalVersions)
 
       const restoreGlobalVersion = createRestoreGlobalVersionTool(draftGlobals)
-      if (restoreGlobalVersion) tools.push(restoreGlobalVersion as unknown as ToolFactoryOutput)
+      if (restoreGlobalVersion) tools.push(restoreGlobalVersion)
     }
 
     // Build the per-request initializer that mcp-handler invokes.

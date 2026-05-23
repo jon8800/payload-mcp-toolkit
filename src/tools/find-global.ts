@@ -56,8 +56,8 @@ export function createFindGlobalTool(
         .optional()
         .describe('Relationship population depth. Default 1.'),
     },
-    handler: async (args: FindGlobalArgs, req: PayloadRequest, _extra: unknown) => {
-      const { slug, draft, depth } = args
+    handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
+      const { slug, draft, depth } = args as unknown as FindGlobalArgs
 
       if (!globalSchemas.has(slug)) {
         return textResponse(
@@ -94,7 +94,7 @@ export function createFindGlobalTool(
         const hint = previewUrl
           ? `\n📋 This global is in draft status. Preview it here: ${previewUrl}`
           : '\n📋 This global is in draft status. Use the admin panel to preview it.'
-        return { content: [...base.content, { type: 'text', text: hint }] }
+        return { content: [...base.content, { type: 'text' as const, text: hint }] }
       } catch (err) {
         return textResponse(`Error reading global "${slug}": ${errorMessage(err)}`)
       }

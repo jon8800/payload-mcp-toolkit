@@ -72,14 +72,7 @@ export function createPatchLayoutTool(
         .describe('Index for insertAt/replaceAt operations'),
     },
     handler: async (
-      args: {
-        collection: string
-        documentId: string
-        layoutField?: string
-        blocks: Array<Record<string, unknown>>
-        operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
-        insertIndex?: number
-      },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
@@ -90,7 +83,14 @@ export function createPatchLayoutTool(
         blocks,
         operation,
         insertIndex,
-      } = args
+      } = args as {
+        collection: string
+        documentId: string
+        layoutField?: string
+        blocks: Array<Record<string, unknown>>
+        operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
+        insertIndex?: number
+      }
 
       const rootKey = `${collection}:${layoutField}`
       const rootAllowed = nestingByCollectionField.get(rootKey)

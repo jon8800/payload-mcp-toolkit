@@ -49,7 +49,8 @@ export function createUpdateGlobalTool(
             'Examples: \'{"siteName":"Acme"}\', \'{"social":{"twitter":"@acme"}}\'.',
         ),
     },
-    handler: async (args: UpdateGlobalArgs, req: PayloadRequest, _extra: unknown) => {
+    handler: async (rawArgs: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
+      const args = rawArgs as unknown as UpdateGlobalArgs
       const { slug } = args
 
       let data: Record<string, unknown>

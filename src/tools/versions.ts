@@ -38,11 +38,15 @@ export function createListVersionsTool(draftCollections: Set<string>) {
         .describe(`Maximum number of versions to return (default ${DEFAULT_LIST_LIMIT})`),
     },
     handler: async (
-      args: { collection: string; documentId: string; limit?: number },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection, documentId, limit = DEFAULT_LIST_LIMIT } = args
+      const { collection, documentId, limit = DEFAULT_LIST_LIMIT } = args as {
+        collection: string
+        documentId: string
+        limit?: number
+      }
 
       const guard = requireDraftCollection(collection, draftCollections, 'versions')
       if (guard) return guard
@@ -112,11 +116,11 @@ export function createRestoreVersionTool(draftCollections: Set<string>) {
         .describe('The version ID returned by listVersions (NOT the document ID)'),
     },
     handler: async (
-      args: { collection: string; versionId: string },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection, versionId } = args
+      const { collection, versionId } = args as { collection: string; versionId: string }
 
       const guard = requireDraftCollection(collection, draftCollections, 'versions')
       if (guard) return guard

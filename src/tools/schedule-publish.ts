@@ -69,11 +69,15 @@ function buildTool(schedulableSlugs: string[]) {
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; publishAt: string },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection, documentId, publishAt } = args
+      const { collection, documentId, publishAt } = args as {
+        collection: string
+        documentId: string
+        publishAt: string
+      }
 
       if (!schedulableSlugs.includes(collection)) {
         return textResponse(

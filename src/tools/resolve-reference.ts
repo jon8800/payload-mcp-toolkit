@@ -27,10 +27,10 @@ export function createResolveReferenceTool(
         .optional()
         .describe('Optional collection slug to restrict search to a single collection'),
     }),
-    handler: async (args: { query: string; collection?: string }, req: PayloadRequest) => {
+    handler: async (args: Record<string, unknown>, req: PayloadRequest) => {
       stampMcpContext(req)
 
-      const { query, collection } = args
+      const { query, collection } = args as { query: string; collection?: string }
 
       const collectionsToSearch = collection
         ? new Map(

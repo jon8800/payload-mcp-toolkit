@@ -72,17 +72,17 @@ export function createPatchGlobalLayoutTool(
       insertIndex: z.number().optional().describe('Index for insertAt/replaceAt operations'),
     },
     handler: async (
-      args: {
+      args: Record<string, unknown>,
+      req: PayloadRequest,
+      _extra: unknown,
+    ) => {
+      const { slug, layoutField, blocks, operation, insertIndex } = args as {
         slug: string
         layoutField: string
         blocks: Array<Record<string, unknown>>
         operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
         insertIndex?: number
-      },
-      req: PayloadRequest,
-      _extra: unknown,
-    ) => {
-      const { slug, layoutField, blocks, operation, insertIndex } = args
+      }
 
       const rootKey = `${slug}:${layoutField}`
       const rootAllowed = nestingByGlobalField.get(rootKey)

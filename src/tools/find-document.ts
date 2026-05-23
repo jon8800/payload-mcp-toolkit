@@ -86,10 +86,11 @@ export function createFindDocumentTool(
         ),
     },
     handler: async (
-      args: FindDocumentArgs,
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as unknown as FindDocumentArgs
       const { collection, id, where, limit, depth, draft } = args
 
       if (!collectionSchemas.has(collection)) {

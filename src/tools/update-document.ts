@@ -56,10 +56,11 @@ export function createUpdateDocumentTool(
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; data: string },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string; data: string }
       const { collection, documentId } = args
 
       let data: Record<string, unknown>

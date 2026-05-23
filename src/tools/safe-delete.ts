@@ -69,10 +69,11 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; confirm?: boolean },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string; confirm?: boolean }
       const { collection, documentId, confirm = false } = args
 
       stampMcpContext(req)

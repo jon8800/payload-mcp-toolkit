@@ -25,10 +25,11 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
       documentId: z.string().describe('The ID of the document to publish'),
     },
     handler: async (
-      args: { collection: string; documentId: string },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string }
       const { collection, documentId } = args
 
       const guard = requireDraftCollection(collection, draftCollections)

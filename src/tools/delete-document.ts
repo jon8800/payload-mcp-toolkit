@@ -35,8 +35,8 @@ export function createDeleteDocumentTool(collectionSchemas: Map<string, Collecti
       collection: z.string().describe(`Collection slug. One of: ${deletableSlugs.join(', ')}`),
       id: z.string().describe('Document ID to delete.'),
     },
-    handler: async (args: DeleteDocumentArgs, req: PayloadRequest, _extra: unknown) => {
-      const { collection, id } = args
+    handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
+      const { collection, id } = args as unknown as DeleteDocumentArgs
 
       if (!collectionSchemas.has(collection)) {
         return textResponse(

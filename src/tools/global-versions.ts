@@ -30,11 +30,11 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
         .describe(`Maximum number of versions to return (default ${DEFAULT_LIST_LIMIT})`),
     },
     handler: async (
-      args: { slug: string; limit?: number },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, limit = DEFAULT_LIST_LIMIT } = args
+      const { slug, limit = DEFAULT_LIST_LIMIT } = args as { slug: string; limit?: number }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(
@@ -103,11 +103,11 @@ export function createRestoreGlobalVersionTool(draftGlobals: Set<string>) {
         .describe('The version ID returned by listGlobalVersions (NOT the global slug)'),
     },
     handler: async (
-      args: { slug: string; versionId: string },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, versionId } = args
+      const { slug, versionId } = args as { slug: string; versionId: string }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(

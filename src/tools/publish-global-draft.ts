@@ -22,8 +22,8 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
         .enum(slugs as [string, ...string[]])
         .describe(`The global slug. One of: ${slugs.join(', ')}`),
     },
-    handler: async (args: { slug: string }, req: PayloadRequest, _extra: unknown) => {
-      const { slug } = args
+    handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
+      const { slug } = args as { slug: string }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(

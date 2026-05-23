@@ -74,15 +74,19 @@ export function createCreateDocumentTool(
         ),
     },
     handler: async (
-      args: { collection: string; data: string; draft?: boolean },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection } = args
+      const { collection, data: rawData, draft } = args as {
+        collection: string
+        data: string
+        draft?: boolean
+      }
 
       let data: Record<string, unknown>
       try {
-        data = JSON.parse(args.data)
+        data = JSON.parse(rawData)
       } catch {
         return textResponse(
           'Error: "data" must be a valid JSON string. Example: \'{"name": "Aria", "slug": "aria"}\'',
@@ -108,7 +112,7 @@ export function createCreateDocumentTool(
       stampMcpContext(req)
 
       const isDraftCollection = draftCollections.has(collection)
-      const asDraft = args.draft ?? isDraftCollection
+      const asDraft = draft ?? isDraftCollection
 
       try {
         const doc = await req.payload.create({

@@ -76,15 +76,7 @@ export function createSearchContentTool(
         .describe(`Maximum hits per collection (default ${DEFAULT_LIMIT}, max ${HARD_LIMIT}).`),
     },
     handler: async (
-      args: {
-        collection?: string
-        query?: string
-        status?: 'draft' | 'published' | 'any'
-        olderThanDays?: number
-        newerThanDays?: number
-        missingFields?: string[]
-        limit?: number
-      },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
@@ -96,7 +88,15 @@ export function createSearchContentTool(
         newerThanDays,
         missingFields,
         limit = DEFAULT_LIMIT,
-      } = args
+      } = args as {
+        collection?: string
+        query?: string
+        status?: 'draft' | 'published' | 'any'
+        olderThanDays?: number
+        newerThanDays?: number
+        missingFields?: string[]
+        limit?: number
+      }
 
       stampMcpContext(req)
 
