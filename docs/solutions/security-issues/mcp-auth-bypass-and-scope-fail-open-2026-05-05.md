@@ -2,6 +2,7 @@
 title: MCP endpoint auth bypass and scopes.collections fail-open
 module: payload-mcp-toolkit
 date: 2026-05-05
+last_updated: 2026-05-23
 category: security-issues
 problem_type: security_issue
 component: authentication
@@ -42,7 +43,7 @@ tags:
 
 - The bearer strategy in `auth.strategies` correctly returned `{ user: null }` on auth failure, but Payload only surfaces that to **collection-level** access — it does not refuse requests at custom endpoints. So `src/endpoint.ts` saw an anonymous request and kept going.
 - Host/Origin guards in `endpoint.ts` blocked CSRF-shaped traffic but did nothing about missing credentials.
-- `assertScopeAllows` in `src/registry.ts` used `effective = override ?? presetActions` and gated only on `if (effective && ...)`, so any path producing `undefined` (unknown collection, no preset, no collection arg) silently allowed the call.
+- `assertScopeAllows` (originally in `src/registry.ts`; since refactored to `src/scope/policy.ts` in v0.6.0) used `effective = override ?? presetActions` and gated only on `if (effective && ...)`, so any path producing `undefined` (unknown collection, no preset, no collection arg) silently allowed the call.
 - Treating "null scopes = full access" as a back-compat default meant the endpoint-level miss was instantly weaponizable instead of being caught downstream.
 
 ## Solution
@@ -57,7 +58,9 @@ if (!getApiKeyContext(req)) {
 
 Inserted immediately after the Host/Origin checks and **before** the per-request `mcp-handler` is constructed, so no tool registration or routing occurs for unauthenticated callers.
 
-### `src/registry.ts` — fail-closed `assertScopeAllows`
+### `src/scope/policy.ts` (originally `src/registry.ts`) — fail-closed `assertScopeAllows`
+
+> The v0.4.1 fix landed in `src/registry.ts`. In v0.6.0 the scope logic was extracted into `src/scope/policy.ts` and split into `checkResource` / `checkAccount` helpers parameterised by a `ResourcePolicy` (one for collections, one for globals). The fail-closed contract is preserved — the semantics below still hold, just structured around three resource kinds (`collection` / `global` / `account`) instead of one collection-or-account branch.
 
 ```ts
 if (collection) {
@@ -108,6 +111,8 @@ Defense in depth: the endpoint gate ensures no anonymous request ever reaches to
 
 ## Related
 
+- [[scope-bypass-account-tools-and-globals-exclusion-leak]] — v0.6.1 follow-up that closes a combinatorial case this fix missed: keys carrying **both** a preset **and** an explicit `collections` / `globals` override could still call account-routed tools (`searchContent`, `resolveReference`, `uploadMedia`) under the preset's wider grant. The fix below covered the no-preset case; the v0.6.1 doc covers preset + override and also addresses an excluded-globals leak via `blockNesting`.
+- [[multi-resource-scope-routing-2026-05-23]] — architecture-pattern doc for the v0.6 three-axis scope evaluator (collection / global / account) that grew out of this v0.4.1 fail-closed posture. Read alongside this learning when changing the policy module.
 - `docs/plans/2026-05-04-001-feat-standalone-mcp-plugin-v04-plan.md` — the plan that introduced these decisions. The plan's R3 ("Auth via `auth.strategies`, not endpoint middleware") and the scopes-JSON description are now partially superseded: `auth.strategies` is necessary but not sufficient (custom endpoints still need explicit gating), and the scopes shape needs whitelist semantics, not fallthrough.
 - `docs/brainstorms/standalone-plugin-2026-05-04.md` — origin brainstorm where the scoped-authz model was first sketched.
 - `docs/brainstorms/standalone-plugin-future-work-2026-05-04.md` — admin-panel future work that will inherit the corrected fail-closed semantics.
