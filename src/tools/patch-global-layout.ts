@@ -2,6 +2,13 @@ import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { BlockCatalog, BlockNestingMap } from '../types'
 import { DRAFT_NOTE, errorMessage, jsonResponse, stampMcpContext } from './_helpers'
+import {
+  applyOperation,
+  errorResponse,
+  readPath,
+  validateBlockList,
+  writePath,
+} from './_layout-helpers'
 
 /**
  * patchGlobalLayout — surgical wrapper that mutates a single blocks-typed
@@ -116,7 +123,7 @@ export function createPatchGlobalLayoutTool(
       try {
         await req.payload.updateGlobal({
           slug: slug as never,
-          data: writePath({}, layoutField, finalLayout) as never,
+          data: writePath(existing ?? {}, layoutField, finalLayout) as never,
           draft: isDraftGlobal,
           req,
           overrideAccess: false,
@@ -140,136 +147,3 @@ export function createPatchGlobalLayoutTool(
   }
 }
 
-function errorResponse(message: string, extra?: Record<string, unknown>) {
-  return jsonResponse({ success: false, error: message, ...(extra ?? {}) })
-}
-
-/** Walk a dotted path on an object and return the value (or undefined). */
-function readPath(obj: Record<string, unknown> | undefined, path: string): Record<string, unknown>[] {
-  if (!obj) return []
-  const parts = path.split('.')
-  let cur: unknown = obj
-  for (const part of parts) {
-    if (cur && typeof cur === 'object' && !Array.isArray(cur)) {
-      cur = (cur as Record<string, unknown>)[part]
-    } else {
-      return []
-    }
-  }
-  return Array.isArray(cur) ? (cur as Record<string, unknown>[]) : []
-}
-
-/** Set a dotted path on an object to a value (creating intermediate groups). */
-function writePath(
-  obj: Record<string, unknown>,
-  path: string,
-  value: unknown,
-): Record<string, unknown> {
-  const parts = path.split('.')
-  let cur: Record<string, unknown> = obj
-  for (let i = 0; i < parts.length - 1; i++) {
-    const key = parts[i]
-    const next = cur[key]
-    if (!next || typeof next !== 'object' || Array.isArray(next)) {
-      cur[key] = {}
-    }
-    cur = cur[key] as Record<string, unknown>
-  }
-  cur[parts[parts.length - 1]] = value
-  return obj
-}
-
-function validateBlockList(
-  blocks: Array<Record<string, unknown>>,
-  allowedSlugs: string[],
-  pathLabel: string,
-  allBlockSlugs: Set<string>,
-  nestingByBlockField: Map<string, string[]>,
-  errors: string[],
-) {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i]
-    const here = `${pathLabel}[${i}]`
-
-    if (!block || typeof block !== 'object') {
-      errors.push(`${here}: not an object`)
-      continue
-    }
-
-    const slug = block.blockType
-    if (typeof slug !== 'string' || !slug) {
-      errors.push(`${here}: missing string \`blockType\``)
-      continue
-    }
-
-    if (!allBlockSlugs.has(slug)) {
-      errors.push(`${here}: unknown blockType "${slug}". Known: ${[...allBlockSlugs].join(', ')}`)
-      continue
-    }
-
-    if (!allowedSlugs.includes(slug)) {
-      errors.push(
-        `${here}: blockType "${slug}" not allowed here. Allowed at this position: ${allowedSlugs.join(', ') || '(none)'}`,
-      )
-      continue
-    }
-
-    for (const [fieldName, value] of Object.entries(block)) {
-      if (!Array.isArray(value)) continue
-      if (value.length === 0) continue
-      if (!value.every((v) => v && typeof v === 'object' && 'blockType' in v)) continue
-
-      const nextKey = `${slug}:${fieldName}`
-      const nextAllowed = nestingByBlockField.get(nextKey)
-      if (!nextAllowed) {
-        errors.push(
-          `${here}.${fieldName}: block "${slug}" has no blocks field named "${fieldName}" in the schema`,
-        )
-        continue
-      }
-
-      validateBlockList(
-        value as Array<Record<string, unknown>>,
-        nextAllowed,
-        `${here}.${fieldName}`,
-        allBlockSlugs,
-        nestingByBlockField,
-        errors,
-      )
-    }
-  }
-}
-
-function applyOperation(
-  newBlocks: Record<string, unknown>[],
-  operation: 'full' | 'append' | 'prepend' | 'insertAt' | 'replaceAt',
-  insertIndex: number | undefined,
-  existingLayout: Record<string, unknown>[] | undefined,
-): Record<string, unknown>[] {
-  if (operation === 'full' || !existingLayout) {
-    return newBlocks
-  }
-
-  const existing = [...existingLayout]
-
-  if (operation === 'append') return [...existing, ...newBlocks]
-  if (operation === 'prepend') return [...newBlocks, ...existing]
-
-  if (operation === 'insertAt') {
-    if (insertIndex === undefined || insertIndex < 0 || insertIndex > existing.length) {
-      return [...existing, ...newBlocks]
-    }
-    existing.splice(insertIndex, 0, ...newBlocks)
-    return existing
-  }
-
-  if (operation === 'replaceAt') {
-    if (insertIndex === undefined || insertIndex < 0 || insertIndex >= existing.length) {
-      return existing
-    }
-    existing.splice(insertIndex, newBlocks.length, ...newBlocks)
-    return existing
-  }
-
-  return newBlocks
-}

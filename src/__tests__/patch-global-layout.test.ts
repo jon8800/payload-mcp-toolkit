@@ -177,6 +177,125 @@ describe('patchGlobalLayout', () => {
     expect(req.payload.updateGlobal).not.toHaveBeenCalled()
   })
 
+  it('dotted layoutField preserves sibling fields in the parent group', async () => {
+    // Reg test for the sibling-wipe bug: a dotted layoutField like
+    // "sections.layout" used to write {sections: {layout: [...]}} which
+    // Payload merges at the top level only — silently wiping
+    // sections.copyright. writePath now reads the existing parent group
+    // off the fetched global and merges siblings in.
+    const NestedFooter: GlobalConfig = {
+      slug: 'nestedFooter',
+      versions: { drafts: true },
+      fields: [
+        {
+          name: 'sections',
+          type: 'group',
+          fields: [
+            { name: 'copyright', type: 'text' },
+            { name: 'layout', type: 'blocks', blocks: [Heading, CtaBanner] },
+          ],
+        },
+      ],
+    }
+    const nestedNesting = buildBlockNestingMap([], [NestedFooter], allBlocks)
+    const tool = createPatchGlobalLayoutTool(catalog, nestedNesting, new Set(['nestedFooter']))!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({
+      sections: {
+        copyright: 'do-not-wipe',
+        layout: [{ blockType: 'heading', text: 'a' }],
+      },
+    })
+    req.payload.updateGlobal.mockResolvedValue({})
+
+    await tool.handler(
+      {
+        slug: 'nestedFooter',
+        layoutField: 'sections.layout',
+        blocks: [{ blockType: 'ctaBanner', label: 'Buy' }],
+        operation: 'append',
+      },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.updateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          sections: {
+            copyright: 'do-not-wipe',
+            layout: [
+              { blockType: 'heading', text: 'a' },
+              { blockType: 'ctaBanner', label: 'Buy' },
+            ],
+          },
+        },
+      }),
+    )
+  })
+
+  it('multi-level dotted layoutField preserves siblings at every depth', async () => {
+    const DeepFooter: GlobalConfig = {
+      slug: 'deepFooter',
+      versions: { drafts: true },
+      fields: [
+        {
+          name: 'a',
+          type: 'group',
+          fields: [
+            { name: 'keepA', type: 'text' },
+            {
+              name: 'b',
+              type: 'group',
+              fields: [
+                { name: 'keepB', type: 'text' },
+                { name: 'layout', type: 'blocks', blocks: [Heading] },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const deepNesting = buildBlockNestingMap([], [DeepFooter], allBlocks)
+    const tool = createPatchGlobalLayoutTool(catalog, deepNesting, new Set(['deepFooter']))!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({
+      a: {
+        keepA: 'A-survives',
+        b: {
+          keepB: 'B-survives',
+          layout: [],
+        },
+      },
+    })
+    req.payload.updateGlobal.mockResolvedValue({})
+
+    await tool.handler(
+      {
+        slug: 'deepFooter',
+        layoutField: 'a.b.layout',
+        blocks: [{ blockType: 'heading', text: 'new' }],
+        operation: 'full',
+      },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.updateGlobal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          a: {
+            keepA: 'A-survives',
+            b: {
+              keepB: 'B-survives',
+              layout: [{ blockType: 'heading', text: 'new' }],
+            },
+          },
+        },
+      }),
+    )
+  })
+
   it('returns an error when layoutField is not a blocks field on the global', async () => {
     const tool = createPatchGlobalLayoutTool(catalog, nesting, drafts)!
     const req = buildReq()
