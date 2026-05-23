@@ -1,4 +1,25 @@
+import { z } from 'zod'
 import type { CollectionConfig, PayloadRequest } from 'payload'
+
+/**
+ * Build a `z.enum` over a list of valid resource slugs with a friendly
+ * error message that names the valid set and clarifies why an unknown
+ * slug (e.g. one removed via `options.exclude.globals`) is rejected.
+ *
+ * Default Zod enum errors are "Invalid enum value. …" — accurate but
+ * unhelpful when the slug looks plausible to a caller who isn't aware
+ * the host config excluded it.
+ */
+export function slugEnum(
+  slugs: string[],
+  kind: 'global' | 'collection',
+): z.ZodEnum<[string, ...string[]]> {
+  return z.enum(slugs as [string, ...string[]], {
+    errorMap: () => ({
+      message: `${kind === 'global' ? 'Global' : 'Collection'} slug must be one of: ${slugs.join(', ')}. Unknown or excluded slugs are rejected.`,
+    }),
+  })
+}
 
 export interface McpTextResponse {
   content: Array<{ type: 'text'; text: string }>

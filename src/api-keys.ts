@@ -159,7 +159,7 @@ export function createApiKeysCollection(
         options: toolOptions,
         admin: {
           description:
-            'If set, only these tools are callable with this key. Leave empty to allow any tool the collection scopes permit.',
+            'If set, only these tools are callable with this key. Leave empty to allow any tool the collection scopes permit. Under the Custom preset, an explicit empty list is treated as deny-all on this axis; preset-mode keys created via the REST API with an empty list are coerced to "no restriction".',
         },
       },
       {
@@ -186,6 +186,31 @@ export function createApiKeysCollection(
     auth: {
       disableLocalStrategy: true,
       useAPIKey: true,
+    },
+    hooks: {
+      beforeValidate: [
+        ({ data }) => {
+          // REST clients that create a key with a preset (e.g. admin) but
+          // omit toolAllow / toolDeny would hit Payload's hasMany-select
+          // default of `[]`, which composeScopes correctly interprets as
+          // "deny-all on this axis" (v0.6 Track A). That is the right
+          // semantic for explicit-Custom configurations but a UX trap for
+          // preset-mode keys created via the REST API. Collapse empty
+          // arrays to null when the key is NOT on the Custom preset, so
+          // preset-driven access flows through unimpeded. Custom-preset
+          // keys keep the explicit-empty-means-deny semantic intact.
+          if (!data) return data
+          const preset = (data as { preset?: unknown }).preset
+          if (preset === 'custom') return data
+          for (const axis of ['toolAllow', 'toolDeny'] as const) {
+            const v = (data as Record<string, unknown>)[axis]
+            if (Array.isArray(v) && v.length === 0) {
+              ;(data as Record<string, unknown>)[axis] = null
+            }
+          }
+          return data
+        },
+      ],
     },
     labels: {
       plural: 'API Keys',

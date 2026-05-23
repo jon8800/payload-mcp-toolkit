@@ -266,4 +266,44 @@ describe('createApiKeysCollection', () => {
     })
     expect(result).toBe('preset-prefix')
   })
+
+  it('beforeValidate coerces empty toolAllow/toolDeny to null under preset modes (REST trap fix)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+    expect(hook).toBeDefined()
+
+    const out = hook!({
+      data: { preset: 'admin', toolAllow: [], toolDeny: [] },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+    expect(out.toolDeny).toBeNull()
+  })
+
+  it('beforeValidate preserves explicit-empty toolAllow under the Custom preset (deny-all semantic)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: { preset: 'custom', toolAllow: [], toolDeny: [] },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toEqual([])
+    expect(out.toolDeny).toEqual([])
+  })
+
+  it('beforeValidate leaves populated tool arrays untouched', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: { preset: 'admin', toolAllow: ['findDocument'], toolDeny: ['safeDelete'] },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toEqual(['findDocument'])
+    expect(out.toolDeny).toEqual(['safeDelete'])
+  })
 })

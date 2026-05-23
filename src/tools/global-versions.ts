@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse } from './_helpers'
 
 const DEFAULT_LIST_LIMIT = 10
 
@@ -20,9 +20,7 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
       'Use before restoreGlobalVersion to pick the right point in time. ' +
       `Draft-enabled globals: ${slugs.join(', ')}`,
     parameters: {
-      slug: z
-        .enum(slugs as [string, ...string[]])
-        .describe(`The global slug. One of: ${slugs.join(', ')}`),
+      slug: slugEnum(slugs, 'global').describe(`The global slug. One of: ${slugs.join(', ')}`),
       limit: z
         .number()
         .optional()
@@ -104,9 +102,7 @@ export function createRestoreGlobalVersionTool(draftGlobals: Set<string>) {
       'Restoring creates a new version on top, so the previous state is recoverable. ' +
       `Draft-enabled globals: ${slugs.join(', ')}`,
     parameters: {
-      slug: z
-        .enum(slugs as [string, ...string[]])
-        .describe(`The global slug. One of: ${slugs.join(', ')}`),
+      slug: slugEnum(slugs, 'global').describe(`The global slug. One of: ${slugs.join(', ')}`),
       versionId: z
         .string()
         .describe('The version ID returned by listGlobalVersions (NOT the global slug)'),

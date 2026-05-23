@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { BlockCatalog, BlockNestingMap } from '../types'
-import { DRAFT_NOTE, errorMessage, jsonResponse, stampMcpContext } from './_helpers'
+import { DRAFT_NOTE, errorMessage, jsonResponse, slugEnum, stampMcpContext } from './_helpers'
 import {
   applyOperation,
   errorResponse,
@@ -49,11 +49,9 @@ export function createPatchGlobalLayoutTool(
     description:
       'Surgically modify a blocks-typed field on a global (e.g. footer sections, header nav) without sending the whole array. Same operation grammar as patchLayout. Use the blockNesting resource to see which slugs each field accepts; global-owned edges have ownerType "global".',
     parameters: {
-      slug: z
-        .enum(patchableSlugs as [string, ...string[]])
-        .describe(
-          `The global slug whose blocks-typed field will be patched. One of: ${patchableSlugs.join(', ')}`,
-        ),
+      slug: slugEnum(patchableSlugs, 'global').describe(
+        `The global slug whose blocks-typed field will be patched. One of: ${patchableSlugs.join(', ')}`,
+      ),
       layoutField: z
         .string()
         .describe(

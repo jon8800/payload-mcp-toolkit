@@ -4,6 +4,26 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-05-23
+
+### Fixed
+- **REST-minted keys no longer accidentally deny all tools.** Payload defaults
+  `hasMany` select fields to `[]`, which Track A (`a0a8b9b`) treats as
+  "deny-all on this axis." That was the intended semantic for explicit
+  Custom-preset configurations but a UX trap for preset-mode keys created
+  via the REST API without specifying `toolAllow` / `toolDeny`. A
+  `beforeValidate` hook on the API-keys collection now coerces empty
+  `toolAllow` / `toolDeny` to `null` when the key's preset is **not** Custom.
+  Custom-preset keys retain the explicit-empty-equals-deny semantic intact.
+- **Clearer rejection message for unknown or excluded global slugs.**
+  Global-routed tools (`findGlobal`, `updateGlobal`, `patchGlobalLayout`,
+  `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion`) used
+  a bare `z.enum` over the host's exposed global slugs, which surfaced
+  Zod's default "Invalid enum value" message. The new `slugEnum` helper
+  attaches an `errorMap` that names the valid set and clarifies that
+  unknown or excluded slugs are rejected — easier to diagnose when a slug
+  was hidden via `options.exclude.globals`.
+
 ## [0.6.1] - 2026-05-23
 
 ### Fixed

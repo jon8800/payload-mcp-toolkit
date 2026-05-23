@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { errorMessage, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, slugEnum, stampMcpContext, textResponse } from './_helpers'
 
 /**
  * Promote a draft-enabled global's pending draft to published. Mirrors
@@ -18,9 +18,7 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
       'Publish a draft-enabled global by transitioning its _status from "draft" to "published". ' +
       `Draft-enabled globals: ${slugs.join(', ')}`,
     parameters: {
-      slug: z
-        .enum(slugs as [string, ...string[]])
-        .describe(`The global slug. One of: ${slugs.join(', ')}`),
+      slug: slugEnum(slugs, 'global').describe(`The global slug. One of: ${slugs.join(', ')}`),
       locale: z
         .string()
         .optional()

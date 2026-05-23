@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { GlobalSchema } from '../types'
-import { DRAFT_NOTE, errorMessage, stampMcpContext, textResponse } from './_helpers'
+import { DRAFT_NOTE, errorMessage, slugEnum, stampMcpContext, textResponse } from './_helpers'
 
 interface UpdateGlobalArgs {
   slug: string
@@ -40,9 +40,9 @@ export function createUpdateGlobalTool(
       'Available globals and their fields:\n' +
       globalDescriptions,
     parameters: {
-      slug: z
-        .enum(updatableSlugs as [string, ...string[]])
-        .describe(`The global slug. One of: ${updatableSlugs.join(', ')}`),
+      slug: slugEnum(updatableSlugs, 'global').describe(
+        `The global slug. One of: ${updatableSlugs.join(', ')}`,
+      ),
       data: z
         .string()
         .describe(

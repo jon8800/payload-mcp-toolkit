@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { GlobalConfig, PayloadRequest } from 'payload'
 import type { GlobalSchema } from '../types'
-import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse } from './_helpers'
 
 interface FindGlobalArgs {
   slug: string
@@ -40,9 +40,9 @@ export function createFindGlobalTool(
       'Available globals:\n' +
       descriptionLines.join('\n'),
     parameters: {
-      slug: z
-        .enum(findableSlugs as [string, ...string[]])
-        .describe(`The global slug. One of: ${findableSlugs.join(', ')}`),
+      slug: slugEnum(findableSlugs, 'global').describe(
+        `The global slug. One of: ${findableSlugs.join(', ')}`,
+      ),
       draft: z
         .boolean()
         .optional()

@@ -111,6 +111,15 @@ describe('findGlobal', () => {
     expect(result.content[0]!.text).toMatch(/Error reading global/)
   })
 
+  it('slug enum errorMap surfaces friendly "unknown or excluded" message', () => {
+    const tool = createFindGlobalTool(schemas, drafts, configs, undefined)
+    const slugParam = tool.parameters.slug as { safeParse: (v: unknown) => { success: boolean; error?: { issues: Array<{ message: string }> } } }
+    const res = slugParam.safeParse('secret-config')
+    expect(res.success).toBe(false)
+    expect(res.error!.issues[0]!.message).toMatch(/Unknown or excluded/)
+    expect(res.error!.issues[0]!.message).toContain('site-settings')
+  })
+
   it('does not stamp preview for a published doc even when livePreview is set', async () => {
     const tool = createFindGlobalTool(schemas, drafts, configs, 'https://app.example.com')
     const req = buildReq()
