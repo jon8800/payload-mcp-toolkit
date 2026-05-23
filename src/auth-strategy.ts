@@ -77,19 +77,27 @@ const VALID_GLOBAL_ACTIONS: ReadonlySet<GlobalAction> = new Set(['read', 'update
  * Builds the runtime `KeyScopes` shape consumed by `registry.assertScopeAllows`
  * from the typed scope fields on the api-key row.
  *
- * Returns null when no typed fields are populated (= full access — back-compat
- * for keys that pre-date scoped authz).
+ * Returns null when no typed fields are populated AND no preset is set
+ * (= full access — back-compat for pre-0.5 rows that pre-date scoped authz).
  *
- * Fail-closed contract for the `'custom'` preset:
- *   - `'custom'` is a UI sentinel meaning "use my override fields"; it never
- *     becomes `KeyScopes.preset` itself.
- *   - When the operator selects `'custom'` but populates no overrides, this
- *     function returns an explicit deny-all shape (`{ collections: {}, tools:
- *     { allow: [] } }`) so the registry rejects every dispatch instead of
- *     falling through to the "no scopes set = full access" guard.
- *   - Partial-override custom keys (only `collectionScopes`, or only
- *     `toolAllow` / `toolDeny`) are honoured as written — the deny-all
- *     sentinel only fires when ALL override fields are empty.
+ * Two complementary fail-closed rules:
+ *
+ * 1. **`'custom'` deny-all sentinel.** `'custom'` is a UI sentinel meaning
+ *    "use my override fields"; it never becomes `KeyScopes.preset` itself.
+ *    Payload persists unset JSON / select fields as `null`, so a fresh
+ *    Custom key with no overrides arrives as `{preset:'custom',
+ *    collectionScopes:null, globalScopes:null, toolAllow:null,
+ *    toolDeny:null}`. That row must deny everything (not fall through to
+ *    full access). The sentinel emits `{collections:{}, globals:{},
+ *    tools:{allow:[]}}`.
+ *
+ * 2. **Per-axis explicit-empty.** When a row carries an array value on any
+ *    axis (even `[]`), that axis is honoured as written — an empty
+ *    `toolAllow:[]` means "deny all tools", not "no opinion". This closes a
+ *    gap where a Custom key with `collectionScopes` populated AND
+ *    `toolAllow:[]` previously emitted no `tools.allow` gate (the empty
+ *    array was treated as absent). `toolDeny` is a deny-list, so an empty
+ *    array carries no entries — it is dropped rather than emitted.
  */
 export function composeScopes(
   row: ApiKeyRow,
@@ -97,35 +105,32 @@ export function composeScopes(
 ): KeyScopes | null {
   const presetRaw = row.preset
   const hasPreset = typeof presetRaw === 'string' && presetRaw.length > 0
-  const collectionScopes = Array.isArray(row.collectionScopes) ? row.collectionScopes : []
-  const hasCollectionScopes = collectionScopes.length > 0
-  const globalScopes = Array.isArray(row.globalScopes) ? row.globalScopes : []
-  const hasGlobalScopes = globalScopes.length > 0
-  const toolAllow = Array.isArray(row.toolAllow) ? row.toolAllow.filter((t) => typeof t === 'string') : []
-  const toolDeny = Array.isArray(row.toolDeny) ? row.toolDeny.filter((t) => typeof t === 'string') : []
-  const hasToolAllow = toolAllow.length > 0
-  const hasToolDeny = toolDeny.length > 0
+  const hasCollectionScopesField = Array.isArray(row.collectionScopes)
+  const hasGlobalScopesField = Array.isArray(row.globalScopes)
+  const hasToolAllowField = Array.isArray(row.toolAllow)
+  const hasToolDenyField = Array.isArray(row.toolDeny)
 
+  // Pre-0.5 back-compat: row has no preset and no typed scope fields at
+  // all (all null/undefined). Treat as full access.
   if (
     !hasPreset &&
-    !hasCollectionScopes &&
-    !hasGlobalScopes &&
-    !hasToolAllow &&
-    !hasToolDeny
+    !hasCollectionScopesField &&
+    !hasGlobalScopesField &&
+    !hasToolAllowField &&
+    !hasToolDenyField
   ) {
     return null
   }
 
-  // Custom preset with no overrides on ANY axis: deny everything. The empty
-  // `collections` / `globals` whitelists deny every resource-scoped tool,
-  // and the empty `tools.allow` list denies every tool dispatch — so
-  // account-wide tools (uploadMedia, searchContent, etc.) are also denied.
+  // Sentinel: Custom preset with every axis null/undefined (no array
+  // committed) denies everything. Payload-persisted unset JSON / select
+  // fields arrive as null; this is the fresh-Custom-key case.
   if (
     presetRaw === 'custom' &&
-    !hasCollectionScopes &&
-    !hasGlobalScopes &&
-    !hasToolAllow &&
-    !hasToolDeny
+    !hasCollectionScopesField &&
+    !hasGlobalScopesField &&
+    !hasToolAllowField &&
+    !hasToolDenyField
   ) {
     return { collections: {}, globals: {}, tools: { allow: [] } }
   }
@@ -134,9 +139,10 @@ export function composeScopes(
   if (hasPreset && presetRaw !== 'custom') {
     out.preset = presetRaw as ScopePreset
   }
-  if (hasCollectionScopes) {
+
+  if (hasCollectionScopesField) {
     const collections: Record<string, CollectionAction[]> = {}
-    for (const entry of collectionScopes) {
+    for (const entry of row.collectionScopes as ScopeRow[]) {
       const slug = readScopeSlug(entry, 'collection', logger)
       if (!slug) continue
       const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
@@ -145,13 +151,12 @@ export function composeScopes(
       )
       collections[slug] = actions
     }
-    if (Object.keys(collections).length > 0) {
-      out.collections = collections
-    }
+    out.collections = collections
   }
-  if (hasGlobalScopes) {
+
+  if (hasGlobalScopesField) {
     const globals: Record<string, GlobalAction[]> = {}
-    for (const entry of globalScopes) {
+    for (const entry of row.globalScopes as ScopeRow[]) {
       const slug = readScopeSlug(entry, 'global', logger)
       if (!slug) continue
       const rawActions = Array.isArray(entry?.actions) ? entry.actions : []
@@ -160,15 +165,23 @@ export function composeScopes(
       )
       globals[slug] = actions
     }
-    if (Object.keys(globals).length > 0) {
-      out.globals = globals
-    }
+    out.globals = globals
   }
-  if (hasToolAllow || hasToolDeny) {
+
+  const toolDeny = hasToolDenyField
+    ? (row.toolDeny as unknown[]).filter((t): t is string => typeof t === 'string')
+    : []
+  const emitDeny = toolDeny.length > 0
+
+  if (hasToolAllowField || emitDeny) {
     out.tools = {}
-    if (hasToolAllow) out.tools.allow = toolAllow
-    if (hasToolDeny) out.tools.deny = toolDeny
+    if (hasToolAllowField) {
+      const toolAllow = (row.toolAllow as unknown[]).filter((t): t is string => typeof t === 'string')
+      out.tools.allow = toolAllow
+    }
+    if (emitDeny) out.tools.deny = toolDeny
   }
+
   return out
 }
 

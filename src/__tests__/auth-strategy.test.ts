@@ -147,8 +147,39 @@ describe('composeScopes', () => {
     expect(out).toEqual({ preset: 'admin' })
   })
 
-  it('preset editor + globalScopes: [] (legacy v0.5 empty) produces preset-only KeyScopes', () => {
+  it('preset editor + globalScopes: [] (explicit empty) emits explicit deny-all on the globals axis', () => {
+    // Axis-independent rule: an explicit empty array commits "no globals
+    // allowed" even when a preset is set. Use globalScopes: null (or omit
+    // the field) to fall through to the preset default.
     const out = composeScopes({ ...baseRow, preset: 'editor', globalScopes: [] })
+    expect(out).toEqual({ preset: 'editor', globals: {} })
+  })
+
+  it('preset editor + collectionScopes: [] (explicit empty) emits explicit deny-all on the collections axis', () => {
+    const out = composeScopes({ ...baseRow, preset: 'editor', collectionScopes: [] })
+    expect(out).toEqual({ preset: 'editor', collections: {} })
+  })
+
+  it('preset custom + populated collectionScopes + explicit toolAllow: [] honours both axes', () => {
+    // Closes the prior gap where toolAllow: [] (operator intent: "no tools
+    // allowed") was treated identically to absent and silently dropped, so
+    // the row authenticated with a collection scope but no tool gate.
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: [{ slug: 'posts', actions: ['read'] }],
+      toolAllow: [],
+    })
+    expect(out).toEqual({
+      collections: { posts: ['read'] },
+      tools: { allow: [] },
+    })
+  })
+
+  it('explicit toolDeny: [] carries no entries and emits nothing', () => {
+    // toolDeny is a deny-list — an empty array has nothing to deny, so the
+    // axis is dropped rather than emitting `tools.deny: []`.
+    const out = composeScopes({ ...baseRow, preset: 'editor', toolDeny: [] })
     expect(out).toEqual({ preset: 'editor' })
   })
 
