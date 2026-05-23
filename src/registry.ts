@@ -1,6 +1,6 @@
 import type { PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z, ZodObject, type ZodTypeAny } from 'zod'
+import { ZodObject, type ZodTypeAny } from 'zod'
 import { getApiKeyContext } from './auth-strategy'
 import type { InitializeServerForRequest } from './endpoint'
 import { stampMcpContext, type McpTextResponse } from './tools/_helpers'
@@ -275,7 +275,3 @@ export function createInitializeServer(
     }
   }
 }
-
-// Helper retained for symmetry / explicit imports. Acts as a sanity check
-// that downstream callers see a consistent z reference.
-export const zodRefForDeps: typeof z = z

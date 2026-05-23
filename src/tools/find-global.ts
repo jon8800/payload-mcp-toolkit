@@ -7,6 +7,7 @@ interface FindGlobalArgs {
   slug: string
   draft?: boolean
   depth?: number
+  locale?: string
 }
 
 /**
@@ -55,9 +56,15 @@ export function createFindGlobalTool(
         .max(3)
         .optional()
         .describe('Relationship population depth. Default 1.'),
+      locale: z
+        .string()
+        .optional()
+        .describe(
+          'Optional locale code (e.g. "en", "fr") for localized fields. Defaults to the request locale.',
+        ),
     },
     handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
-      const { slug, draft, depth } = args as unknown as FindGlobalArgs
+      const { slug, draft, depth, locale } = args as unknown as FindGlobalArgs
 
       if (!globalSchemas.has(slug)) {
         return textResponse(
@@ -73,6 +80,7 @@ export function createFindGlobalTool(
           slug: slug as never,
           depth: depth ?? 1,
           draft: draft ?? false,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,

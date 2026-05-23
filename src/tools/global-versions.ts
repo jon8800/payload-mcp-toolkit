@@ -28,13 +28,21 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
         .optional()
         .default(DEFAULT_LIST_LIMIT)
         .describe(`Maximum number of versions to return (default ${DEFAULT_LIST_LIMIT})`),
+      locale: z
+        .string()
+        .optional()
+        .describe('Optional locale code (e.g. "en", "fr") to filter version snapshots to.'),
     },
     handler: async (
       args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, limit = DEFAULT_LIST_LIMIT } = args as { slug: string; limit?: number }
+      const { slug, limit = DEFAULT_LIST_LIMIT, locale } = args as {
+        slug: string
+        limit?: number
+        locale?: string
+      }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(
@@ -49,6 +57,7 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
           slug: slug as never,
           sort: '-updatedAt',
           limit,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,
@@ -101,13 +110,28 @@ export function createRestoreGlobalVersionTool(draftGlobals: Set<string>) {
       versionId: z
         .string()
         .describe('The version ID returned by listGlobalVersions (NOT the global slug)'),
+      expectedUpdatedAt: z
+        .string()
+        .optional()
+        .describe(
+          'Optional CAS guard. If set, the restore is rejected when the global\'s current updatedAt differs from this value — protects against clobbering concurrent edits. Pass the updatedAt returned by a prior findGlobal call.',
+        ),
+      locale: z
+        .string()
+        .optional()
+        .describe('Optional locale code (e.g. "en", "fr") to scope the restore to a single locale.'),
     },
     handler: async (
       args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, versionId } = args as { slug: string; versionId: string }
+      const { slug, versionId, expectedUpdatedAt, locale } = args as {
+        slug: string
+        versionId: string
+        expectedUpdatedAt?: string
+        locale?: string
+      }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(
@@ -117,10 +141,41 @@ export function createRestoreGlobalVersionTool(draftGlobals: Set<string>) {
 
       stampMcpContext(req)
 
+      if (expectedUpdatedAt !== undefined) {
+        try {
+          const current = (await req.payload.findGlobal({
+            slug: slug as never,
+            depth: 0,
+            draft: true,
+            ...(locale ? { locale: locale as never } : {}),
+            req,
+            overrideAccess: false,
+            user: req.user,
+          })) as { updatedAt?: unknown } | undefined
+          const currentUpdatedAt = current?.updatedAt
+          const currentStr =
+            typeof currentUpdatedAt === 'string'
+              ? currentUpdatedAt
+              : currentUpdatedAt instanceof Date
+                ? currentUpdatedAt.toISOString()
+                : undefined
+          if (currentStr !== expectedUpdatedAt) {
+            return textResponse(
+              `Conflict: global "${slug}" was modified since expectedUpdatedAt (${expectedUpdatedAt}); current updatedAt is ${currentStr ?? 'unknown'}. Re-read the global and retry.`,
+            )
+          }
+        } catch (err) {
+          return textResponse(
+            `Error checking expectedUpdatedAt on global "${slug}": ${errorMessage(err)}`,
+          )
+        }
+      }
+
       try {
         await req.payload.restoreGlobalVersion({
           slug: slug as never,
           id: versionId,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,

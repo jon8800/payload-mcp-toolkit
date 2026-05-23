@@ -272,6 +272,21 @@ describe('assertScopeAllows — account-level tools', () => {
     ).toBe(false)
   })
 
+  it('explicit collections override denies account tools even under admin preset', () => {
+    // Regression: account-routed tools (searchContent, resolveReference,
+    // uploadMedia) cross every collection, so an explicit resource
+    // whitelist must trump the preset's wider grant.
+    const scopes = { preset: 'admin' as const, collections: { posts: ['read' as const] } }
+    expect(assertScopeAllows(scopes, 'searchContent', undefined).allowed).toBe(false)
+    expect(assertScopeAllows(scopes, 'resolveReference', undefined).allowed).toBe(false)
+    expect(assertScopeAllows(scopes, 'uploadMedia', undefined).allowed).toBe(false)
+  })
+
+  it('explicit globals override denies account tools even under admin preset', () => {
+    const scopes = { preset: 'admin' as const, globals: { siteSettings: ['read' as const] } }
+    expect(assertScopeAllows(scopes, 'searchContent', undefined).allowed).toBe(false)
+  })
+
   it('unregistered tool name is denied with the registry-mapping reason', () => {
     const decision = assertScopeAllows({ preset: 'admin' }, 'whatIsThisTool', undefined)
     expect(decision.allowed).toBe(false)

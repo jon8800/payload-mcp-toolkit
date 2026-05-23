@@ -4,6 +4,58 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-05-23
+
+### Fixed
+- **Account-tool scope bypass under preset + resource override.** Keys that
+  combined a preset (e.g. `admin`) with an explicit
+  `collectionScopes`/`globalScopes` whitelist were correctly narrowed on
+  collection- and global-routed tools, but account-routed tools
+  (`searchContent`, `resolveReference`, `uploadMedia`) ignored the
+  whitelist and granted whatever the preset alone would have allowed —
+  letting a key pinned to `posts:read` search every collection or upload
+  media into any collection. `checkAccount` now denies account-routed
+  tools whenever the key carries any explicit collection or global scope,
+  since account-level tools span the whole site by design and cannot be
+  narrowed to a slug at call time.
+- **Excluded globals leaked into `blockNesting`.** `buildBlockNestingMap`
+  ran against the unfiltered `globals` list before
+  `options.exclude.globals` was applied, so an excluded global with a
+  blocks field still surfaced in `patchGlobalLayout`'s slug enum and in
+  the `blocks://nesting` resource body. The plugin entry now filters
+  collections and globals by their exclusion sets before building the
+  nesting map.
+- **Dev import map missing `GlobalScopesMatrix`.** `dev/app/(payload)/admin/importMap.js`
+  registered `CollectionScopesMatrix` only; opening the API Keys admin
+  view in the dev app under the Custom preset failed to resolve
+  `payload-mcp-toolkit/client#GlobalScopesMatrix`. The dev import map now
+  includes the global matrix export.
+
+### Added
+- **Optional `locale` arg on every global tool.** `findGlobal`,
+  `updateGlobal`, `patchGlobalLayout`, `publishGlobalDraft`,
+  `listGlobalVersions`, and `restoreGlobalVersion` now accept an optional
+  `locale` parameter that is forwarded to the underlying Payload Local API
+  call — lets MCP clients scope reads and writes to a single locale on
+  localized globals.
+- **CAS guard on global mutations.** `patchGlobalLayout` and
+  `restoreGlobalVersion` accept an optional `expectedUpdatedAt`. When set,
+  the tool fetches the current global, compares `updatedAt`, and aborts
+  with a "Conflict:" error if the value has changed since the caller's
+  prior read. Protects against lost writes when concurrent edits race.
+
+### Changed
+- **Admin scope-matrix copy.** The "Collection scopes" and "Global scopes"
+  matrix descriptions no longer claim the matrix is "only honoured when
+  the preset is Custom" — the registry honours saved overrides on a key
+  whenever they are populated, regardless of which preset is later
+  selected. The fields remain editable only under the Custom preset; the
+  copy now reflects the actual runtime semantics.
+
+### Removed
+- **`zodRefForDeps`** dead re-export of `z` from `src/registry.ts`. Was
+  never referenced internally or externally.
+
 ## [0.6.0] - 2026-05-13
 
 ### Added

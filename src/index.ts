@@ -88,7 +88,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
     const collectionSchemas = introspectCollections(collections)
     const globalSchemas = introspectGlobals(globals)
     const blockCatalog = introspectBlocks(allBlocks)
-    const blockNesting = buildBlockNestingMap(collections, globals, allBlocks)
     const relationships = buildRelationshipGraph(collectionSchemas)
 
     const previewSiteUrl = options.preview?.disabled
@@ -109,6 +108,17 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       draftBehavior: options.draftBehavior,
       excludeGlobals: options.exclude?.globals,
     })
+
+    // Build blockNesting from exclusion-filtered inputs so excluded
+    // collections/globals never appear in patchLayout/patchGlobalLayout slug
+    // enums or in the `blocks://nesting` resource body.
+    const exposedCollectionsForNesting = collections.filter((c) => !excluded.has(c.slug))
+    const exposedGlobalsForNesting = globals.filter((g) => !excludedGlobals.has(g.slug))
+    const blockNesting = buildBlockNestingMap(
+      exposedCollectionsForNesting,
+      exposedGlobalsForNesting,
+      allBlocks,
+    )
 
     // Build a slug → CollectionConfig map for tools that need access to
     // collection-level admin config (preview functions, etc).

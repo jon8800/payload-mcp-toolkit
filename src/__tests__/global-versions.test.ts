@@ -9,6 +9,7 @@ function buildReq() {
   return {
     payload: {
       updateGlobal: vi.fn(),
+      findGlobal: vi.fn(),
       findGlobalVersions: vi.fn(),
       restoreGlobalVersion: vi.fn(),
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -99,5 +100,59 @@ describe('restoreGlobalVersion', () => {
     )
     expect(result.content[0]!.text).toMatch(/Restored global "footer" from version v1/)
     expect(result.content[0]!.text).toMatch(/publishGlobalDraft/)
+  })
+
+  it('expectedUpdatedAt mismatch rejects the restore', async () => {
+    const tool = createRestoreGlobalVersionTool(new Set(['footer']))!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({ updatedAt: '2026-01-02T00:00:00.000Z' })
+
+    const result = await tool.handler(
+      {
+        slug: 'footer',
+        versionId: 'v1',
+        expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      req as never,
+      {},
+    )
+
+    expect(result.content[0]!.text).toMatch(/conflict/i)
+    expect(req.payload.restoreGlobalVersion).not.toHaveBeenCalled()
+  })
+
+  it('expectedUpdatedAt match proceeds with the restore', async () => {
+    const tool = createRestoreGlobalVersionTool(new Set(['footer']))!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({ updatedAt: '2026-01-02T00:00:00.000Z' })
+    req.payload.restoreGlobalVersion.mockResolvedValue({})
+
+    await tool.handler(
+      {
+        slug: 'footer',
+        versionId: 'v1',
+        expectedUpdatedAt: '2026-01-02T00:00:00.000Z',
+      },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.restoreGlobalVersion).toHaveBeenCalled()
+  })
+
+  it('locale arg is forwarded to restoreGlobalVersion', async () => {
+    const tool = createRestoreGlobalVersionTool(new Set(['footer']))!
+    const req = buildReq()
+    req.payload.restoreGlobalVersion.mockResolvedValue({})
+
+    await tool.handler(
+      { slug: 'footer', versionId: 'v1', locale: 'fr' },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.restoreGlobalVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: 'footer', id: 'v1', locale: 'fr' }),
+    )
   })
 })

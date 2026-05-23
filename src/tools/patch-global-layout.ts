@@ -70,19 +70,34 @@ export function createPatchGlobalLayoutTool(
           'How to apply the blocks: append (end), prepend (start), insertAt (at index), replaceAt (overwrite N starting at index), full (replace entire array — use with care).',
         ),
       insertIndex: z.number().optional().describe('Index for insertAt/replaceAt operations'),
+      expectedUpdatedAt: z
+        .string()
+        .optional()
+        .describe(
+          'Optional CAS guard. If set, the patch is rejected when the global\'s current updatedAt differs from this value — protects against lost writes when concurrent edits race. Pass the updatedAt returned by a prior findGlobal call.',
+        ),
+      locale: z
+        .string()
+        .optional()
+        .describe(
+          'Optional locale code (e.g. "en", "fr") to scope the patch to a single locale on localized blocks fields.',
+        ),
     },
     handler: async (
       args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, layoutField, blocks, operation, insertIndex } = args as {
-        slug: string
-        layoutField: string
-        blocks: Array<Record<string, unknown>>
-        operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
-        insertIndex?: number
-      }
+      const { slug, layoutField, blocks, operation, insertIndex, expectedUpdatedAt, locale } =
+        args as {
+          slug: string
+          layoutField: string
+          blocks: Array<Record<string, unknown>>
+          operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
+          insertIndex?: number
+          expectedUpdatedAt?: string
+          locale?: string
+        }
 
       const rootKey = `${slug}:${layoutField}`
       const rootAllowed = nestingByGlobalField.get(rootKey)
@@ -108,12 +123,29 @@ export function createPatchGlobalLayoutTool(
           slug: slug as never,
           depth: 0,
           draft: true,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,
         })) as Record<string, unknown> | undefined
       } catch (error) {
         return errorResponse(`Error fetching global "${slug}": ${errorMessage(error)}`)
+      }
+
+      if (expectedUpdatedAt !== undefined) {
+        const currentUpdatedAt = (existing as { updatedAt?: unknown })?.updatedAt
+        const currentStr =
+          typeof currentUpdatedAt === 'string'
+            ? currentUpdatedAt
+            : currentUpdatedAt instanceof Date
+              ? currentUpdatedAt.toISOString()
+              : undefined
+        if (currentStr !== expectedUpdatedAt) {
+          return errorResponse(
+            `Conflict: global "${slug}" was modified since expectedUpdatedAt (${expectedUpdatedAt}); current updatedAt is ${currentStr ?? 'unknown'}. Re-read the global and retry.`,
+            { currentUpdatedAt: currentStr },
+          )
+        }
       }
 
       const currentLayout = readPath(existing, layoutField)
@@ -126,6 +158,7 @@ export function createPatchGlobalLayoutTool(
           slug: slug as never,
           data: writePath(existing ?? {}, layoutField, finalLayout) as never,
           draft: isDraftGlobal,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,

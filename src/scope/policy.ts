@@ -252,6 +252,18 @@ function checkAccount(
   const action = toolAction.get(toolName)
   const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
 
+  // Explicit resource override is the tightest signal: an account-level tool
+  // operates across the whole site (searchContent across every collection,
+  // uploadMedia into any media coll, etc.) and would broaden the key beyond
+  // the resource whitelist regardless of which preset is set. Deny account
+  // tools whenever the key carries explicit collection/global scopes.
+  if (scopes.collections || scopes.globals) {
+    return {
+      allowed: false,
+      reason: `Tool "${toolName}" is denied for keys with explicit collection or global scopes — account-level tools would broaden access beyond the whitelist.`,
+    }
+  }
+
   if (presetActions) {
     if (action && !presetActions.includes(action)) {
       return {
@@ -260,15 +272,6 @@ function checkAccount(
       }
     }
     return { allowed: true }
-  }
-
-  // No preset but a resource-scoped key exists (collections or globals) →
-  // account-level tools broaden the surface beyond the scoped resources.
-  if (scopes.collections || scopes.globals) {
-    return {
-      allowed: false,
-      reason: `Tool "${toolName}" requires a resource argument under this API key's scoped configuration.`,
-    }
   }
 
   return { allowed: true }

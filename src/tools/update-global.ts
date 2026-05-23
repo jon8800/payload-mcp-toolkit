@@ -6,6 +6,7 @@ import { DRAFT_NOTE, errorMessage, stampMcpContext, textResponse } from './_help
 interface UpdateGlobalArgs {
   slug: string
   data: string
+  locale?: string
 }
 
 /**
@@ -48,10 +49,16 @@ export function createUpdateGlobalTool(
           'JSON string of field names to new values. Only include fields you want to change. ' +
             'Examples: \'{"siteName":"Acme"}\', \'{"social":{"twitter":"@acme"}}\'.',
         ),
+      locale: z
+        .string()
+        .optional()
+        .describe(
+          'Optional locale code (e.g. "en", "fr") to scope the update to a single locale on localized fields.',
+        ),
     },
     handler: async (rawArgs: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
       const args = rawArgs as unknown as UpdateGlobalArgs
-      const { slug } = args
+      const { slug, locale } = args
 
       let data: Record<string, unknown>
       try {
@@ -82,6 +89,7 @@ export function createUpdateGlobalTool(
           slug: slug as never,
           data: data as never,
           draft: isDraftGlobal,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,

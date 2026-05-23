@@ -27,7 +27,7 @@ function CollectionScopesMatrix(props: CollectionScopesMatrixProps): React.React
       actionLabels={ACTION_LABELS}
       itemHeader="Collection"
       title="Collection scopes"
-      description='Check the actions this key may perform on each collection. Unchecked rows are denied outright. Only honoured when the preset is "Custom".'
+      description='Check the actions this key may perform on each collection. Unchecked rows are denied outright. Configured under the "Custom" preset; once set, these overrides apply to this key regardless of which preset is later selected.'
       emptyMessage="No collections are available to scope. Add collections to your Payload config and restart the dev server."
     />
   )

@@ -21,9 +21,13 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
       slug: z
         .enum(slugs as [string, ...string[]])
         .describe(`The global slug. One of: ${slugs.join(', ')}`),
+      locale: z
+        .string()
+        .optional()
+        .describe('Optional locale code (e.g. "en", "fr") for the publish operation.'),
     },
     handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
-      const { slug } = args as { slug: string }
+      const { slug, locale } = args as { slug: string; locale?: string }
 
       if (!draftGlobals.has(slug)) {
         return textResponse(
@@ -37,6 +41,7 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
         await req.payload.updateGlobal({
           slug: slug as never,
           data: { _status: 'published' } as never,
+          ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,
           user: req.user,

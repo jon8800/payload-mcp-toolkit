@@ -296,6 +296,76 @@ describe('patchGlobalLayout', () => {
     )
   })
 
+  it('expectedUpdatedAt mismatch rejects the patch without writing', async () => {
+    const tool = createPatchGlobalLayoutTool(catalog, nesting, drafts)!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({
+      sections: [],
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+
+    const result = await tool.handler(
+      {
+        slug: 'footer',
+        layoutField: 'sections',
+        blocks: [{ blockType: 'heading', text: 'a' }],
+        operation: 'append',
+        expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+      },
+      req as never,
+      {},
+    )
+
+    expect(result.content[0]!.text).toMatch(/conflict/i)
+    expect(req.payload.updateGlobal).not.toHaveBeenCalled()
+  })
+
+  it('expectedUpdatedAt match proceeds with the patch', async () => {
+    const tool = createPatchGlobalLayoutTool(catalog, nesting, drafts)!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({
+      sections: [],
+      updatedAt: '2026-01-02T00:00:00.000Z',
+    })
+    req.payload.updateGlobal.mockResolvedValue({})
+
+    await tool.handler(
+      {
+        slug: 'footer',
+        layoutField: 'sections',
+        blocks: [{ blockType: 'heading', text: 'a' }],
+        operation: 'append',
+        expectedUpdatedAt: '2026-01-02T00:00:00.000Z',
+      },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.updateGlobal).toHaveBeenCalled()
+  })
+
+  it('locale arg is forwarded to findGlobal and updateGlobal', async () => {
+    const tool = createPatchGlobalLayoutTool(catalog, nesting, drafts)!
+    const req = buildReq()
+    req.payload.findGlobal.mockResolvedValue({ sections: [] })
+    req.payload.updateGlobal.mockResolvedValue({})
+
+    await tool.handler(
+      {
+        slug: 'footer',
+        layoutField: 'sections',
+        blocks: [{ blockType: 'heading', text: 'a' }],
+        operation: 'append',
+        locale: 'fr',
+      },
+      req as never,
+      {},
+    )
+
+    expect(req.payload.findGlobal).toHaveBeenCalledWith(expect.objectContaining({ locale: 'fr' }))
+    expect(req.payload.updateGlobal).toHaveBeenCalledWith(expect.objectContaining({ locale: 'fr' }))
+  })
+
   it('returns an error when layoutField is not a blocks field on the global', async () => {
     const tool = createPatchGlobalLayoutTool(catalog, nesting, drafts)!
     const req = buildReq()

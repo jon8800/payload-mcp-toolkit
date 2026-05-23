@@ -25,7 +25,7 @@ function GlobalScopesMatrix(props: GlobalScopesMatrixProps): React.ReactElement 
       actionLabels={ACTION_LABELS}
       itemHeader="Global"
       title="Global scopes"
-      description='Check the actions this key may perform on each global. Globals only support Read and Update (singletons cannot be created or deleted). Only honoured when the preset is "Custom".'
+      description='Check the actions this key may perform on each global. Globals only support Read and Update (singletons cannot be created or deleted). Configured under the "Custom" preset; once set, these overrides apply to this key regardless of which preset is later selected.'
       emptyMessage="No globals are available to scope. Add globals to your Payload config and restart the dev server."
     />
   )
