@@ -101,106 +101,52 @@ const PRESET_TOOL_DENY: Record<ScopePreset, string[]> = {
   admin: [],
 }
 
-/** Collection-keyed tools: action depends on the targeted collection slug. */
-export const TOOL_TO_ACTION: Record<string, CollectionAction> = {
-  findDocument: 'read',
-  listVersions: 'read',
-  createDocument: 'create',
-  updateDocument: 'update',
-  patchLayout: 'update',
-  publishDraft: 'update',
-  schedulePublish: 'update',
-  restoreVersion: 'update',
-  deleteDocument: 'delete',
-  safeDelete: 'delete',
-}
-
-/** Global-keyed tools: action depends on the targeted global slug. */
-export const TOOL_TO_GLOBAL_ACTION: Record<string, GlobalAction> = {
-  findGlobal: 'read',
-  updateGlobal: 'update',
-  patchGlobalLayout: 'update',
-  publishGlobalDraft: 'update',
-  listGlobalVersions: 'read',
-  restoreGlobalVersion: 'update',
-}
-
-/**
- * Account-level tools: no resource scope; the preset's action list gates
- * them directly. The implied action is what the preset must permit
- * account-wide (e.g. `uploadMedia` requires `create`).
- */
-export const ACCOUNT_LEVEL_ACTIONS: Record<string, CollectionAction> = {
-  searchContent: 'read',
-  resolveReference: 'read',
-  uploadMedia: 'create',
-}
-
-export const ACCOUNT_LEVEL_TOOLS: ReadonlySet<string> = new Set(Object.keys(ACCOUNT_LEVEL_ACTIONS))
-
 export interface ScopeDecision {
   allowed: boolean
   reason?: string
 }
 
 /**
- * Look up which routing set a tool belongs to. Returns `null` when the tool
- * isn't registered in any set — at request time that produces a fail-closed
- * denial; at boot time `assertScopeRegistryInvariant` turns it into a
- * startup error so the mistake surfaces before the first request.
+ * Routing tables built from the tool list at initializer construction. Each
+ * factory carries its own `routing` discriminator (see `ToolRouting`), so
+ * the mapping cannot drift out of sync with the tool list — adding a tool
+ * without routing is a TS error at the factory return site.
+ *
+ * The boot-time `assertScopeRegistryInvariant` previously guarded the
+ * "forgot to wire a new tool into the routing map" failure mode. That
+ * failure is now structurally unrepresentable.
  */
-export function resolveResourceKind(toolName: string): ResourceKind | null {
-  if (toolName in TOOL_TO_ACTION) return 'collection'
-  if (toolName in TOOL_TO_GLOBAL_ACTION) return 'global'
-  if (ACCOUNT_LEVEL_TOOLS.has(toolName)) return 'account'
-  return null
+interface RoutingTables {
+  collectionToolAction: ReadonlyMap<string, CollectionAction>
+  globalToolAction: ReadonlyMap<string, GlobalAction>
+  accountToolAction: ReadonlyMap<string, CollectionAction>
+  toolKind: ReadonlyMap<string, ResourceKind>
 }
 
-/**
- * Plugin-init invariant: every registered tool name must appear in exactly
- * one of `TOOL_TO_ACTION`, `TOOL_TO_GLOBAL_ACTION`, or `ACCOUNT_LEVEL_TOOLS`.
- *
- * Membership prevents a "forgot to register" mistake from silently falling
- * through at request time. Disjointness prevents ambiguity between collection
- * and global routing for the same name.
- *
- * Called once from `src/index.ts` after the tool list is assembled. Throws
- * synchronously so plugin boot fails with an actionable message.
- */
-export function assertScopeRegistryInvariant(toolNames: string[]): void {
-  const missing: string[] = []
-  const duplicates: string[] = []
-  for (const name of toolNames) {
-    let memberships = 0
-    if (name in TOOL_TO_ACTION) memberships++
-    if (name in TOOL_TO_GLOBAL_ACTION) memberships++
-    if (ACCOUNT_LEVEL_TOOLS.has(name)) memberships++
-    if (memberships === 0) missing.push(name)
-    if (memberships > 1) duplicates.push(name)
+function buildRoutingTables(tools: ToolFactoryOutput[]): RoutingTables {
+  const collectionToolAction = new Map<string, CollectionAction>()
+  const globalToolAction = new Map<string, GlobalAction>()
+  const accountToolAction = new Map<string, CollectionAction>()
+  const toolKind = new Map<string, ResourceKind>()
+  for (const t of tools) {
+    toolKind.set(t.name, t.routing.kind)
+    if (t.routing.kind === 'collection') collectionToolAction.set(t.name, t.routing.action)
+    else if (t.routing.kind === 'global') globalToolAction.set(t.name, t.routing.action)
+    else accountToolAction.set(t.name, t.routing.action)
   }
-  if (missing.length > 0 || duplicates.length > 0) {
-    const parts: string[] = ['[payload-mcp-toolkit] Scope routing invariant violated.']
-    if (missing.length > 0) {
-      parts.push(
-        `Tool(s) absent from TOOL_TO_ACTION, TOOL_TO_GLOBAL_ACTION, and ACCOUNT_LEVEL_TOOLS: ${missing.join(', ')}.`,
-      )
-    }
-    if (duplicates.length > 0) {
-      parts.push(
-        `Tool(s) registered in more than one routing set: ${duplicates.join(', ')}.`,
-      )
-    }
-    parts.push('Add the tool to exactly one routing set in src/registry.ts.')
-    throw new Error(parts.join(' '))
-  }
+  return { collectionToolAction, globalToolAction, accountToolAction, toolKind }
 }
 
+export type ScopeChecker = (
+  scopes: KeyScopes | null | undefined,
+  toolName: string,
+  resource: string | undefined,
+) => ScopeDecision
+
 /**
- * Pure function: decide whether a tool call is permitted given the request's
- * scopes, the tool's resource kind, and (when applicable) the targeted slug.
- *
- * Resource kind is derived by the caller via `resolveResourceKind(toolName)`
- * so per-call routing is explicit; we don't re-derive inside this function.
+ * Build a scope checker bound to a concrete tool list. The checker is a pure
+ * function over (scopes, toolName, resource) — the routing tables are closed
+ * over once at construction time.
  *
  * Fail-closed semantics:
  *   - Null/undefined scopes grant full access (back-compat).
@@ -213,14 +159,21 @@ export function assertScopeRegistryInvariant(toolNames: string[]): void {
  *     is set. Without a preset, a key scoped to specific collections/globals
  *     cannot use account-level tools — they'd broaden the surface.
  */
-export function assertScopeAllows(
+export function buildScopeChecker(tools: ToolFactoryOutput[]): ScopeChecker {
+  const tables = buildRoutingTables(tools)
+  return (scopes, toolName, resource) => assertScopeAllowsImpl(scopes, toolName, resource, tables)
+}
+
+function assertScopeAllowsImpl(
   scopes: KeyScopes | null | undefined,
   toolName: string,
   resource: string | undefined,
-  resourceKind: ResourceKind | null = resolveResourceKind(toolName),
+  tables: RoutingTables,
 ): ScopeDecision {
-  // Unregistered tool — fail-closed at request time. The invariant check
-  // catches this at boot, but this is the belt-and-braces fallback.
+  const resourceKind = tables.toolKind.get(toolName) ?? null
+  // Unregistered tool — fail-closed at request time. Adding a tool without a
+  // routing field is a TS error at the factory return site, so this branch
+  // only fires for typo'd tool names sent by the client.
   if (resourceKind === null) {
     return {
       allowed: false,
@@ -250,20 +203,21 @@ export function assertScopeAllows(
   }
 
   if (resourceKind === 'collection') {
-    return checkCollection(scopes, toolName, resource)
+    return checkCollection(scopes, toolName, resource, tables.collectionToolAction)
   }
   if (resourceKind === 'global') {
-    return checkGlobal(scopes, toolName, resource)
+    return checkGlobal(scopes, toolName, resource, tables.globalToolAction)
   }
-  return checkAccount(scopes, toolName)
+  return checkAccount(scopes, toolName, tables.accountToolAction)
 }
 
 function checkCollection(
   scopes: KeyScopes,
   toolName: string,
   collection: string | undefined,
+  toolAction: ReadonlyMap<string, CollectionAction>,
 ): ScopeDecision {
-  const action = TOOL_TO_ACTION[toolName]
+  const action = toolAction.get(toolName)
   const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
   const collectionsScope = scopes.collections
 
@@ -313,8 +267,9 @@ function checkGlobal(
   scopes: KeyScopes,
   toolName: string,
   global: string | undefined,
+  toolAction: ReadonlyMap<string, GlobalAction>,
 ): ScopeDecision {
-  const action = TOOL_TO_GLOBAL_ACTION[toolName]
+  const action = toolAction.get(toolName)
   const presetActions = scopes.preset ? PRESET_GLOBAL_ACTIONS[scopes.preset] : undefined
   const globalsScope = scopes.globals
 
@@ -356,8 +311,12 @@ function checkGlobal(
   return { allowed: true }
 }
 
-function checkAccount(scopes: KeyScopes, toolName: string): ScopeDecision {
-  const action = ACCOUNT_LEVEL_ACTIONS[toolName]
+function checkAccount(
+  scopes: KeyScopes,
+  toolName: string,
+  toolAction: ReadonlyMap<string, CollectionAction>,
+): ScopeDecision {
+  const action = toolAction.get(toolName)
   const presetActions = scopes.preset ? PRESET_ACTIONS[scopes.preset] : undefined
 
   if (presetActions) {
@@ -458,13 +417,14 @@ export function createInitializeServer(
   options: CreateInitializeServerOptions,
 ): InitializeServerForRequest {
   const { tools, prompts = [], resources = [] } = options
+  const tables = buildRoutingTables(tools)
 
   return (req: PayloadRequest) => (server: McpServer) => {
     const logger = req.payload?.logger
     const requestId = getRequestId(req)
 
     for (const tool of tools) {
-      const resourceKind = resolveResourceKind(tool.name)
+      const resourceKind = tables.toolKind.get(tool.name) ?? null
       const wrapped = async (
         args: Record<string, unknown>,
         extra: unknown,
@@ -480,11 +440,11 @@ export function createInitializeServer(
         const targetKind = resourceKind ?? undefined
         const dataKeys = extractDataKeys(args)
 
-        const decision = assertScopeAllows(
+        const decision = assertScopeAllowsImpl(
           keyCtx?.scopes ?? null,
           tool.name,
           targetSlug,
-          resourceKind,
+          tables,
         )
         // Audit-log writes must never break the tool dispatch path. A
         // throwing logger transport (closed stream during HMR, custom pino

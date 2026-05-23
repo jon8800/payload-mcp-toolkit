@@ -1,15 +1,52 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
 import {
-  ACCOUNT_LEVEL_TOOLS,
-  assertScopeAllows,
-  assertScopeRegistryInvariant,
+  buildScopeChecker,
   createInitializeServer,
-  resolveResourceKind,
-  TOOL_TO_ACTION,
-  TOOL_TO_GLOBAL_ACTION,
   type ToolFactoryOutput,
+  type ToolRouting,
 } from '../registry'
+
+// Test fixture: mirrors the production tool catalogue's routing so the
+// scope-checker tests stay stable across factory-internal changes. Each
+// entry is a minimal `ToolFactoryOutput` — only `name` and `routing` are
+// read by `buildScopeChecker`.
+function fixtureTool(name: string, routing: ToolRouting): ToolFactoryOutput {
+  return {
+    name,
+    routing,
+    description: '',
+    parameters: {},
+    handler: async () => ({ content: [{ type: 'text', text: '' }] }),
+  }
+}
+
+const PRODUCTION_TOOLS: ToolFactoryOutput[] = [
+  // collection
+  fixtureTool('findDocument', { kind: 'collection', action: 'read' }),
+  fixtureTool('listVersions', { kind: 'collection', action: 'read' }),
+  fixtureTool('createDocument', { kind: 'collection', action: 'create' }),
+  fixtureTool('updateDocument', { kind: 'collection', action: 'update' }),
+  fixtureTool('patchLayout', { kind: 'collection', action: 'update' }),
+  fixtureTool('publishDraft', { kind: 'collection', action: 'update' }),
+  fixtureTool('schedulePublish', { kind: 'collection', action: 'update' }),
+  fixtureTool('restoreVersion', { kind: 'collection', action: 'update' }),
+  fixtureTool('deleteDocument', { kind: 'collection', action: 'delete' }),
+  fixtureTool('safeDelete', { kind: 'collection', action: 'delete' }),
+  // global
+  fixtureTool('findGlobal', { kind: 'global', action: 'read' }),
+  fixtureTool('updateGlobal', { kind: 'global', action: 'update' }),
+  fixtureTool('patchGlobalLayout', { kind: 'global', action: 'update' }),
+  fixtureTool('publishGlobalDraft', { kind: 'global', action: 'update' }),
+  fixtureTool('listGlobalVersions', { kind: 'global', action: 'read' }),
+  fixtureTool('restoreGlobalVersion', { kind: 'global', action: 'update' }),
+  // account
+  fixtureTool('searchContent', { kind: 'account', action: 'read' }),
+  fixtureTool('resolveReference', { kind: 'account', action: 'read' }),
+  fixtureTool('uploadMedia', { kind: 'account', action: 'create' }),
+]
+
+const assertScopeAllows = buildScopeChecker(PRODUCTION_TOOLS)
 
 describe('assertScopeAllows', () => {
   it('grants full access when scopes is null/undefined or empty', () => {
@@ -242,46 +279,29 @@ describe('assertScopeAllows — account-level tools', () => {
   })
 })
 
-// ─── Registry invariant (boot-time guard) ────────────────────────────
+// ─── Routing collocation (TS-enforced; spot-check via the checker) ───
+//
+// The boot-time `assertScopeRegistryInvariant` is gone: every factory
+// must declare its `routing` field, so "missing routing" is a TS error
+// at the factory return site. Duplicate routing is impossible because
+// each tool name appears exactly once in the production tool list (the
+// plugin entry assembles the array). What remains is a behavioural
+// spot-check that the production fixture routes each canonical tool to
+// the correct policy branch.
 
-describe('assertScopeRegistryInvariant', () => {
-  it('passes for the production tool list (every registered tool is mapped)', () => {
-    const all = [
-      ...Object.keys(TOOL_TO_ACTION),
-      ...Object.keys(TOOL_TO_GLOBAL_ACTION),
-      ...ACCOUNT_LEVEL_TOOLS,
-    ]
-    expect(() => assertScopeRegistryInvariant(all)).not.toThrow()
+describe('routing is collocated on every tool factory', () => {
+  it('collection-keyed tool dispatches through the collection policy', () => {
+    expect(assertScopeAllows({ preset: 'editor' }, 'createDocument', 'posts').allowed).toBe(true)
   })
-
-  it('throws with an actionable message when a tool is missing', () => {
-    expect(() =>
-      assertScopeRegistryInvariant(['findDocument', 'somethingNew']),
-    ).toThrow(/somethingNew/)
+  it('global-keyed tool dispatches through the global policy', () => {
+    expect(
+      assertScopeAllows({ preset: 'admin' }, 'updateGlobal', 'siteSettings').allowed,
+    ).toBe(true)
   })
-
-  it('routing maps stay disjoint in production: a name is never in two sets', () => {
-    const collectionsAndGlobals = Object.keys(TOOL_TO_ACTION).filter(
-      (n) => n in TOOL_TO_GLOBAL_ACTION,
-    )
-    expect(collectionsAndGlobals).toEqual([])
-    const collectionsAndAccount = Object.keys(TOOL_TO_ACTION).filter((n) =>
-      ACCOUNT_LEVEL_TOOLS.has(n),
-    )
-    expect(collectionsAndAccount).toEqual([])
-    const globalsAndAccount = Object.keys(TOOL_TO_GLOBAL_ACTION).filter((n) =>
-      ACCOUNT_LEVEL_TOOLS.has(n),
-    )
-    expect(globalsAndAccount).toEqual([])
-  })
-})
-
-describe('resolveResourceKind', () => {
-  it('returns the expected kind for known tools', () => {
-    expect(resolveResourceKind('findDocument')).toBe('collection')
-    expect(resolveResourceKind('findGlobal')).toBe('global')
-    expect(resolveResourceKind('searchContent')).toBe('account')
-    expect(resolveResourceKind('not-a-tool')).toBeNull()
+  it('account-keyed tool dispatches through the account policy', () => {
+    expect(
+      assertScopeAllows({ preset: 'read-only' }, 'searchContent', undefined).allowed,
+    ).toBe(true)
   })
 })
 
@@ -332,6 +352,7 @@ function buildReq(opts: {
 function makeTool(handler: ToolFactoryOutput['handler']): ToolFactoryOutput {
   return {
     name: 'createDocument',
+    routing: { kind: 'collection', action: 'create' },
     description: 'create a document',
     parameters: { collection: z.string(), data: z.string() },
     handler,
@@ -456,8 +477,9 @@ describe('createInitializeServer', () => {
   })
 
   it('normalizes z.object() params to a raw shape before registering with the SDK', () => {
-    const tool = {
+    const tool: ToolFactoryOutput = {
       name: 'resolveReference',
+      routing: { kind: 'account', action: 'read' },
       description: 'x',
       parameters: z.object({ query: z.string(), collection: z.string().optional() }),
       handler: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }),
@@ -476,6 +498,7 @@ describe('createInitializeServer', () => {
     const req = buildReq()
     const tool: ToolFactoryOutput = {
       name: 'findDocument',
+      routing: { kind: 'collection', action: 'read' },
       description: 'x',
       parameters: { collection: z.string() },
       handler: toolHandler,
@@ -499,6 +522,7 @@ describe('createInitializeServer', () => {
     const req = buildReq()
     const tool: ToolFactoryOutput = {
       name: 'findGlobal',
+      routing: { kind: 'global', action: 'read' },
       description: 'x',
       parameters: { slug: z.string() },
       handler: toolHandler,
@@ -521,6 +545,7 @@ describe('createInitializeServer', () => {
     const req = buildReq()
     const tool: ToolFactoryOutput = {
       name: 'searchContent',
+      routing: { kind: 'account', action: 'read' },
       description: 'x',
       parameters: { q: z.string() },
       handler: toolHandler,

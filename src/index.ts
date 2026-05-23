@@ -14,7 +14,6 @@ import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys'
 import { createBearerStrategy } from './auth-strategy'
 import { createMcpEndpoints } from './endpoint'
 import {
-  assertScopeRegistryInvariant,
   createInitializeServer,
   type ToolFactoryOutput,
 } from './registry'
@@ -213,11 +212,6 @@ export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugi
       const restoreGlobalVersion = createRestoreGlobalVersionTool(draftGlobals)
       if (restoreGlobalVersion) tools.push(restoreGlobalVersion as unknown as ToolFactoryOutput)
     }
-
-    // Boot-time invariant: every registered tool must route to exactly one
-    // scope set. Throws synchronously so plugin init fails with an
-    // actionable message if a new tool ever lands without a routing entry.
-    assertScopeRegistryInvariant(tools.map((t) => t.name))
 
     // Build the per-request initializer that mcp-handler invokes.
     const buildInitializeServer = createInitializeServer({
