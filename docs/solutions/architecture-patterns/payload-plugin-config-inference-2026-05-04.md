@@ -21,7 +21,7 @@ tags: [payload-cms, plugin-design, zero-config, schema-inference, block-system, 
 The toolkit's first two releases (v0.1, v0.2) shipped with a config object that asked the developer to declare information Payload's own config already carried. The minimum-working invocation looked like this:
 
 ```ts
-contentToolkitPlugin({
+mcpToolkitPlugin({
   siteUrl: process.env.SITE_URL!,
   previewSecret: process.env.PREVIEW_SECRET!,
   previewPaths: { pages: '', posts: '/blog' },
@@ -65,7 +65,7 @@ For every plugin option, ask: "Is this information already in the host config, t
 
 ```ts
 // Before: required option
-contentToolkitPlugin({ siteUrl: 'https://example.com', ... })
+mcpToolkitPlugin({ siteUrl: 'https://example.com', ... })
 
 // After: read serverURL from buildConfig with conventional fallbacks
 const previewSiteUrl =
@@ -136,7 +136,7 @@ A whole tool (`composePageLayout`) and its helper module disappear because the v
 ```ts
 // In dev/payload.config.ts
 plugins: [
-  contentToolkitPlugin({
+  mcpToolkitPlugin({
     siteUrl: process.env.SITE_URL || 'http://localhost:3000',
     previewSecret: process.env.PREVIEW_SECRET || 'preview-secret',
     previewPaths: { pages: '', posts: '/blog' },
@@ -167,7 +167,7 @@ collections: [
   },
 ],
 plugins: [
-  contentToolkitPlugin({
+  mcpToolkitPlugin({
     domainPrompts: [...],  // only thing the plugin can't infer — site-specific vocabulary
   }),
 ],

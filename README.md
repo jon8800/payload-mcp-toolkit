@@ -18,13 +18,13 @@ Peer dependencies: `payload` ^3, `zod` ^3.
 
 ```ts
 // payload.config.ts
-import { contentToolkitPlugin } from 'payload-mcp-toolkit'
+import { mcpToolkitPlugin } from 'payload-mcp-toolkit'
 
 export default buildConfig({
   // ...your collections, blocks, globals
   serverURL: process.env.SITE_URL,        // used for absolute preview URLs + Host check
   admin: { user: 'users' },               // your auth collection
-  plugins: [contentToolkitPlugin()],
+  plugins: [mcpToolkitPlugin()],
 })
 ```
 
@@ -132,7 +132,7 @@ The asymmetry exists because globals broadcast site-wide on a single write: site
 Every option is an escape hatch — pass only what you need:
 
 ```ts
-contentToolkitPlugin({
+mcpToolkitPlugin({
   auth: {
     allowedOrigins: ['https://app.example.com'],   // origin allow-list for the /api/mcp Origin/Host check; browser preflight not yet handled — see Known limitations
   },
@@ -190,8 +190,8 @@ v0.3.x wrapped `@payloadcms/plugin-mcp`. v0.4 owns the small remaining surface (
    ```diff
    - import { mcpPlugin } from '@payloadcms/plugin-mcp'
    - // ...
-   - plugins: [contentToolkitPlugin(), mcpPlugin({ ... })],
-   + plugins: [contentToolkitPlugin()],
+   - plugins: [mcpToolkitPlugin(), mcpPlugin({ ... })],
+   + plugins: [mcpToolkitPlugin()],
    ```
 2. **Drop the dependency** from `package.json`:
    ```bash

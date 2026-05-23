@@ -3,7 +3,7 @@ import { fileURLToPath } from 'url'
 import { buildConfig } from 'payload'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
 import { lexicalEditor } from '@payloadcms/richtext-lexical'
-import { contentToolkitPlugin } from 'payload-mcp-toolkit'
+import { mcpToolkitPlugin } from 'payload-mcp-toolkit'
 
 import { Users } from './collections/Users'
 import { Media } from './collections/Media'
@@ -41,7 +41,7 @@ export default buildConfig({
     // Zero-config — the toolkit infers draft behavior from each collection's
     // `versions.drafts`, preview URLs from `admin.livePreview.url`, the auth
     // collection from `admin.user`, and the site URL from `serverURL` above.
-    contentToolkitPlugin({
+    mcpToolkitPlugin({
       domainPrompts: [
         {
           name: 'sampleSiteVocabulary',

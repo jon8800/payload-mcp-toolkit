@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Config } from 'payload'
-import { contentToolkitPlugin } from '../index'
+import { mcpToolkitPlugin } from '../index'
 
 function baseConfig(): Config {
   return {
@@ -25,9 +25,9 @@ function baseConfig(): Config {
   } as never
 }
 
-describe('contentToolkitPlugin integration', () => {
+describe('mcpToolkitPlugin integration', () => {
   it('appends the api-keys collection and the MCP endpoints additively', () => {
-    const cfg = contentToolkitPlugin()(baseConfig())
+    const cfg = mcpToolkitPlugin()(baseConfig())
     const slugs = (cfg.collections ?? []).map((c) => c.slug)
     expect(slugs).toContain('payload-mcp-api-keys')
     expect(slugs).toContain('users')
@@ -37,7 +37,7 @@ describe('contentToolkitPlugin integration', () => {
   })
 
   it('attaches the bearer strategy to the user collection without losing existing auth config', () => {
-    const cfg = contentToolkitPlugin()(baseConfig())
+    const cfg = mcpToolkitPlugin()(baseConfig())
     const users = (cfg.collections ?? []).find((c) => c.slug === 'users') as {
       auth: { strategies?: Array<{ name: string }> }
     }
@@ -52,7 +52,7 @@ describe('contentToolkitPlugin integration', () => {
     }
     const otherStrategy = { name: 'tenant-shared-strategy', authenticate: async () => ({ user: null }) }
     cfg.collections[0]!.auth = { strategies: [otherStrategy] } as never
-    const out = contentToolkitPlugin()(cfg as never)
+    const out = mcpToolkitPlugin()(cfg as never)
     const users = (out.collections ?? []).find((c) => c.slug === 'users') as {
       auth: { strategies: Array<{ name: string }> }
     }
@@ -67,7 +67,7 @@ describe('contentToolkitPlugin integration', () => {
     }
     cfg.admin = { user: 'admins' }
     cfg.collections[0]!.slug = 'admins'
-    const out = contentToolkitPlugin()(cfg as never)
+    const out = mcpToolkitPlugin()(cfg as never)
     const admins = (out.collections ?? []).find((c) => c.slug === 'admins') as {
       auth: { strategies?: Array<{ name: string }> }
     }
@@ -78,7 +78,7 @@ describe('contentToolkitPlugin integration', () => {
     const cfg = baseConfig() as Config
     function mcpPlugin() {}
     ;(cfg as { plugins: unknown[] }).plugins = [mcpPlugin as never]
-    expect(() => contentToolkitPlugin()(cfg)).toThrow(/standalone successor/)
+    expect(() => mcpToolkitPlugin()(cfg)).toThrow(/standalone successor/)
   })
 
   it('throws when an existing collection takes the api-keys slug', () => {
@@ -86,18 +86,18 @@ describe('contentToolkitPlugin integration', () => {
       collections: Array<{ slug: string; fields: unknown[] }>
     }
     cfg.collections.push({ slug: 'payload-mcp-api-keys', fields: [] })
-    expect(() => contentToolkitPlugin()(cfg as never)).toThrow(/payload-mcp-api-keys/)
+    expect(() => mcpToolkitPlugin()(cfg as never)).toThrow(/payload-mcp-api-keys/)
   })
 
   it('honours a custom apiKeyCollection.slug', () => {
-    const cfg = contentToolkitPlugin({ apiKeyCollection: { slug: 'my-keys' } })(baseConfig())
+    const cfg = mcpToolkitPlugin({ apiKeyCollection: { slug: 'my-keys' } })(baseConfig())
     const slugs = (cfg.collections ?? []).map((c) => c.slug)
     expect(slugs).toContain('my-keys')
     expect(slugs).not.toContain('payload-mcp-api-keys')
   })
 
   it('a host config with no globals still registers the globalScopes field (matrix shows empty state)', () => {
-    const cfg = contentToolkitPlugin()(baseConfig())
+    const cfg = mcpToolkitPlugin()(baseConfig())
     // The field always renders under Custom; the matrix component reports
     // the absence via its own empty-state copy when availableGlobals is [].
     const apiKeys = (cfg.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
@@ -120,7 +120,7 @@ describe('contentToolkitPlugin integration', () => {
     cfg.globals = [
       { slug: 'site-settings', fields: [{ name: 'siteName', type: 'text' }] },
     ] as never
-    const out = contentToolkitPlugin()(cfg)
+    const out = mcpToolkitPlugin()(cfg)
     const apiKeys = (out.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
       fields: Array<{
         name?: string
@@ -143,7 +143,7 @@ describe('contentToolkitPlugin integration', () => {
       { slug: 'site-settings', fields: [{ name: 'siteName', type: 'text' }] },
       { slug: 'secret-config', fields: [{ name: 'token', type: 'text' }] },
     ] as never
-    const out = contentToolkitPlugin({ exclude: { globals: ['secret-config'] } })(cfg)
+    const out = mcpToolkitPlugin({ exclude: { globals: ['secret-config'] } })(cfg)
     const apiKeys = (out.collections ?? []).find((c) => c.slug === 'payload-mcp-api-keys') as {
       fields: Array<{
         name?: string

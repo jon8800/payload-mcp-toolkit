@@ -68,12 +68,12 @@ function resolveUserCollection(
  *
  * Zero-config usage:
  * ```ts
- * plugins: [contentToolkitPlugin()]
+ * plugins: [mcpToolkitPlugin()]
  * ```
  *
  * See `ContentToolkitOptions` for the (entirely optional) escape hatches.
  */
-export function contentToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
+export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
   return (incomingConfig: Config): Config => {
     const apiKeysSlug = options.apiKeyCollection?.slug ?? API_KEYS_DEFAULT_SLUG
 

@@ -4,7 +4,7 @@
  * This file is **not** exported from the package — it lives here as a
  * reference for how to build a `ContentToolkitOptions` factory tailored
  * to your own CMS. Copy the pattern into your own project, swap the
- * vocabulary and draft policy, and pass the result to `contentToolkitPlugin`.
+ * vocabulary and draft policy, and pass the result to `mcpToolkitPlugin`.
  */
 import type { ContentToolkitOptions, DomainPrompt } from 'payload-mcp-toolkit'
 

@@ -4,7 +4,7 @@ Working notes for AI coding agents (Claude Code, Codex, Cursor, etc.) operating 
 
 ## Project orientation
 
-- **What this is:** standalone Payload CMS v3 plugin. Owns `/api/mcp`, the `payload-mcp-api-keys` collection, the bearer auth strategy, scope-evaluation policy, draft workflow, and the AI-facing tool/prompt/resource surface. The plugin entry point is `src/index.ts` → `contentToolkitPlugin`.
+- **What this is:** standalone Payload CMS v3 plugin. Owns `/api/mcp`, the `payload-mcp-api-keys` collection, the bearer auth strategy, scope-evaluation policy, draft workflow, and the AI-facing tool/prompt/resource surface. The plugin entry point is `src/index.ts` → `mcpToolkitPlugin`.
 - **Language / build:** TypeScript, ESM. Types via `tsc -p tsconfig.build.json`; JS emit via `swc`. Tests run on `vitest`.
 - **Package manager:** `pnpm`.
 
