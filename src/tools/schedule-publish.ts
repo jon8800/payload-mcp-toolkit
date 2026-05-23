@@ -49,6 +49,7 @@ export function createSchedulePublishTool(
 function buildTool(schedulableSlugs: string[]) {
   return {
     name: 'schedulePublish',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Schedule a draft to be published at a future date by stamping its publishedAt field. ' +
       'The document stays in draft status until your Payload jobs queue (or an external worker) ' +
@@ -68,11 +69,15 @@ function buildTool(schedulableSlugs: string[]) {
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; publishAt: string },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection, documentId, publishAt } = args
+      const { collection, documentId, publishAt } = args as {
+        collection: string
+        documentId: string
+        publishAt: string
+      }
 
       if (!schedulableSlugs.includes(collection)) {
         return textResponse(

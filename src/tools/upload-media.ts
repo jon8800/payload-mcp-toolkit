@@ -20,6 +20,7 @@ export function createUploadMediaTool(options?: {
 
   return {
     name: 'uploadMedia',
+    routing: { kind: 'account', action: 'create' } as const,
     description:
       'Upload an image to the media library from a public HTTPS URL. ' +
       'Fetches the image with SSRF protection, validates it is an allowed image type ' +
@@ -33,10 +34,11 @@ export function createUploadMediaTool(options?: {
         .describe('Alt text for the image. Generates from filename if omitted.'),
     },
     handler: async (
-      args: { url: string; alt?: string },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { url: string; alt?: string }
       const { url } = args
 
       let buffer: Buffer

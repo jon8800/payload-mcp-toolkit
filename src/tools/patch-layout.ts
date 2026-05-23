@@ -8,6 +8,7 @@ import {
   jsonResponse,
   stampMcpContext,
 } from './_helpers'
+import { applyOperation, errorResponse, validateBlockList } from './_layout-helpers'
 
 /**
  * patchLayout — surgical wrapper that mutates a single document's blocks-typed
@@ -44,6 +45,7 @@ export function createPatchLayoutTool(
 
   return {
     name: 'patchLayout',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Surgically modify a document\'s blocks-typed field (e.g. "layout") without sending the whole array. Pass the blocks to add/replace plus an operation (append, prepend, insertAt, replaceAt, full). The current array is fetched server-side and the operation is applied atomically. Each block must include a `blockType` plus its fields; nested `blocks`-typed fields can contain arbitrarily-deep block arrays as long as each level matches the schema. Use the `blockNesting` resource to see which slugs each field accepts.',
     parameters: {
@@ -70,14 +72,7 @@ export function createPatchLayoutTool(
         .describe('Index for insertAt/replaceAt operations'),
     },
     handler: async (
-      args: {
-        collection: string
-        documentId: string
-        layoutField?: string
-        blocks: Array<Record<string, unknown>>
-        operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
-        insertIndex?: number
-      },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
@@ -88,7 +83,14 @@ export function createPatchLayoutTool(
         blocks,
         operation,
         insertIndex,
-      } = args
+      } = args as {
+        collection: string
+        documentId: string
+        layoutField?: string
+        blocks: Array<Record<string, unknown>>
+        operation: 'append' | 'prepend' | 'insertAt' | 'replaceAt' | 'full'
+        insertIndex?: number
+      }
 
       const rootKey = `${collection}:${layoutField}`
       const rootAllowed = nestingByCollectionField.get(rootKey)
@@ -158,112 +160,3 @@ export function createPatchLayoutTool(
   }
 }
 
-function errorResponse(message: string, extra?: Record<string, unknown>) {
-  return jsonResponse({ success: false, error: message, ...(extra ?? {}) })
-}
-
-/**
- * Recursively validate a block array against an allow list, descending into
- * each block's own `blocks`-typed fields when present.
- */
-function validateBlockList(
-  blocks: Array<Record<string, unknown>>,
-  allowedSlugs: string[],
-  pathLabel: string,
-  allBlockSlugs: Set<string>,
-  nestingByBlockField: Map<string, string[]>,
-  errors: string[],
-) {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i]
-    const here = `${pathLabel}[${i}]`
-
-    if (!block || typeof block !== 'object') {
-      errors.push(`${here}: not an object`)
-      continue
-    }
-
-    const slug = block.blockType
-    if (typeof slug !== 'string' || !slug) {
-      errors.push(`${here}: missing string \`blockType\``)
-      continue
-    }
-
-    if (!allBlockSlugs.has(slug)) {
-      errors.push(`${here}: unknown blockType "${slug}". Known: ${[...allBlockSlugs].join(', ')}`)
-      continue
-    }
-
-    if (!allowedSlugs.includes(slug)) {
-      errors.push(
-        `${here}: blockType "${slug}" not allowed here. Allowed at this position: ${allowedSlugs.join(', ') || '(none)'}`,
-      )
-      continue
-    }
-
-    // Any value that is itself an array of objects with `blockType` is treated
-    // as a nested blocks field. The field name is cross-checked against the
-    // nesting map to find the next-level allow list.
-    for (const [fieldName, value] of Object.entries(block)) {
-      if (!Array.isArray(value)) continue
-      if (value.length === 0) continue
-      if (!value.every((v) => v && typeof v === 'object' && 'blockType' in v)) continue
-
-      const nextKey = `${slug}:${fieldName}`
-      const nextAllowed = nestingByBlockField.get(nextKey)
-      if (!nextAllowed) {
-        errors.push(
-          `${here}.${fieldName}: block "${slug}" has no blocks field named "${fieldName}" in the schema`,
-        )
-        continue
-      }
-
-      validateBlockList(
-        value as Array<Record<string, unknown>>,
-        nextAllowed,
-        `${here}.${fieldName}`,
-        allBlockSlugs,
-        nestingByBlockField,
-        errors,
-      )
-    }
-  }
-}
-
-/**
- * Apply a list operation against an existing array of blocks.
- * `full` always replaces; the rest preserve the existing array.
- */
-function applyOperation(
-  newBlocks: Record<string, unknown>[],
-  operation: 'full' | 'append' | 'prepend' | 'insertAt' | 'replaceAt',
-  insertIndex: number | undefined,
-  existingLayout: Record<string, unknown>[] | undefined,
-): Record<string, unknown>[] {
-  if (operation === 'full' || !existingLayout) {
-    return newBlocks
-  }
-
-  const existing = [...existingLayout]
-
-  if (operation === 'append') return [...existing, ...newBlocks]
-  if (operation === 'prepend') return [...newBlocks, ...existing]
-
-  if (operation === 'insertAt') {
-    if (insertIndex === undefined || insertIndex < 0 || insertIndex > existing.length) {
-      return [...existing, ...newBlocks]
-    }
-    existing.splice(insertIndex, 0, ...newBlocks)
-    return existing
-  }
-
-  if (operation === 'replaceAt') {
-    if (insertIndex === undefined || insertIndex < 0 || insertIndex >= existing.length) {
-      return existing
-    }
-    existing.splice(insertIndex, newBlocks.length, ...newBlocks)
-    return existing
-  }
-
-  return newBlocks
-}

@@ -34,6 +34,7 @@ export function createSearchContentTool(
 
   return {
     name: 'searchContent',
+    routing: { kind: 'account', action: 'read' } as const,
     description:
       'Search and filter content across collections by status, age, missing fields, or free-text query. ' +
       'Designed for editor triage — finding drafts, stale content, content with missing SEO fields, etc. ' +
@@ -75,15 +76,7 @@ export function createSearchContentTool(
         .describe(`Maximum hits per collection (default ${DEFAULT_LIMIT}, max ${HARD_LIMIT}).`),
     },
     handler: async (
-      args: {
-        collection?: string
-        query?: string
-        status?: 'draft' | 'published' | 'any'
-        olderThanDays?: number
-        newerThanDays?: number
-        missingFields?: string[]
-        limit?: number
-      },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
@@ -95,7 +88,15 @@ export function createSearchContentTool(
         newerThanDays,
         missingFields,
         limit = DEFAULT_LIMIT,
-      } = args
+      } = args as {
+        collection?: string
+        query?: string
+        status?: 'draft' | 'published' | 'any'
+        olderThanDays?: number
+        newerThanDays?: number
+        missingFields?: string[]
+        limit?: number
+      }
 
       stampMcpContext(req)
 

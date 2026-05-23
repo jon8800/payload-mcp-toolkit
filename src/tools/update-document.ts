@@ -31,6 +31,7 @@ export function createUpdateDocumentTool(
 
   return {
     name: 'updateDocument',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Update fields on an existing document in any collection. ' +
       'Pass only the fields you want to change — unspecified fields are left untouched. ' +
@@ -55,10 +56,11 @@ export function createUpdateDocumentTool(
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; data: string },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string; data: string }
       const { collection, documentId } = args
 
       let data: Record<string, unknown>

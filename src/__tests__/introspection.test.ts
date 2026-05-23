@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import type { Block, CollectionConfig } from 'payload'
+import type { Block, CollectionConfig, GlobalConfig } from 'payload'
 import {
   introspectCollection,
   introspectCollections,
   introspectBlocks,
   buildBlockNestingMap,
   buildRelationshipGraph,
+  hasGlobalDrafts,
+  introspectGlobal,
+  introspectGlobals,
 } from '../introspection'
 
 // ─── Sample schema (kept inline so the test is self-contained) ─────
@@ -320,6 +323,145 @@ describe('buildBlockNestingMap', () => {
 })
 
 // ─── buildRelationshipGraph ────────────────────────────────────────
+
+// ─── Global introspection ──────────────────────────────────────────
+
+const SiteSettings: GlobalConfig = {
+  slug: 'site-settings',
+  fields: [
+    { name: 'siteName', type: 'text', required: true },
+    { name: 'tagline', type: 'text' },
+    {
+      name: 'social',
+      type: 'group',
+      fields: [
+        { name: 'twitter', type: 'text' },
+        { name: 'instagram', type: 'text' },
+      ],
+    },
+  ],
+}
+
+const FooterGlobal: GlobalConfig = {
+  slug: 'footer',
+  versions: { drafts: true },
+  fields: [
+    {
+      name: 'layout',
+      type: 'blocks',
+      blocks: [Heading, CtaBanner],
+    },
+  ],
+}
+
+const HeaderGlobal: GlobalConfig = {
+  slug: 'header',
+  fields: [
+    {
+      name: 'menu',
+      type: 'group',
+      fields: [
+        { name: 'label', type: 'text' },
+        {
+          name: 'links',
+          type: 'blocks',
+          blocks: [Heading],
+        },
+      ],
+    },
+  ],
+}
+
+describe('hasGlobalDrafts', () => {
+  it('returns true for { versions: { drafts: true } }', () => {
+    expect(hasGlobalDrafts({ slug: 'g', versions: { drafts: true }, fields: [] })).toBe(true)
+  })
+
+  it('returns false for { versions: { drafts: false } }', () => {
+    expect(hasGlobalDrafts({ slug: 'g', versions: { drafts: false }, fields: [] })).toBe(false)
+  })
+
+  it('returns false when versions is undefined', () => {
+    expect(hasGlobalDrafts({ slug: 'g', fields: [] })).toBe(false)
+  })
+
+  it('returns false for versions without drafts key', () => {
+    expect(
+      hasGlobalDrafts({ slug: 'g', versions: { maxPerDoc: 10 }, fields: [] } as GlobalConfig),
+    ).toBe(false)
+  })
+})
+
+describe('introspectGlobal', () => {
+  it('extracts SiteSettings fields and draft/live-preview flags', () => {
+    const schema = introspectGlobal(SiteSettings)
+    expect(schema.slug).toBe('site-settings')
+    expect(schema.hasDrafts).toBe(false)
+    expect(schema.hasLivePreview).toBe(false)
+    const names = schema.fields.map((f) => f.name)
+    expect(names).toContain('siteName')
+    expect(names).toContain('tagline')
+    const social = schema.fields.find((f) => f.name === 'social')
+    expect(social?.type).toBe('group')
+    expect(social?.fields?.map((f) => f.name)).toEqual(['twitter', 'instagram'])
+  })
+
+  it('reports hasDrafts: true when versions.drafts is set', () => {
+    expect(introspectGlobal(FooterGlobal).hasDrafts).toBe(true)
+  })
+})
+
+describe('introspectGlobals', () => {
+  it('returns an empty Map for []', () => {
+    expect(introspectGlobals([]).size).toBe(0)
+  })
+
+  it('keys the map by slug', () => {
+    const map = introspectGlobals([SiteSettings, FooterGlobal])
+    expect(map.has('site-settings')).toBe(true)
+    expect(map.has('footer')).toBe(true)
+  })
+})
+
+describe('buildBlockNestingMap with globals', () => {
+  it('emits an edge with ownerType "global" for a top-level blocks field', () => {
+    const map = buildBlockNestingMap([], [FooterGlobal], allBlocks)
+    const edge = map.find(
+      (e) => e.ownerType === 'global' && e.owner === 'footer' && e.fieldPath === 'layout',
+    )
+    expect(edge).toBeDefined()
+    expect(edge!.acceptedBlockSlugs).toEqual(['heading', 'ctaBanner'])
+  })
+
+  it('walks group-nested blocks fields under a global with the dotted path', () => {
+    const map = buildBlockNestingMap([], [HeaderGlobal], allBlocks)
+    const edge = map.find(
+      (e) => e.ownerType === 'global' && e.owner === 'header' && e.fieldPath === 'menu.links',
+    )
+    expect(edge).toBeDefined()
+    expect(edge!.acceptedBlockSlugs).toEqual(['heading'])
+  })
+
+  it('two-arg call (no globals) produces the same edges as before — regression guard', () => {
+    const before = buildBlockNestingMap([Pages], allBlocks)
+    const after = buildBlockNestingMap([Pages], [], allBlocks)
+    expect(after).toEqual(before)
+  })
+
+  it('invariant: throws when (owner, fieldPath) appears with different ownerTypes', () => {
+    const ClashCollection: CollectionConfig = {
+      slug: 'site-settings',
+      fields: [{ name: 'layout', type: 'blocks', blocks: [Heading] }],
+    }
+    const ClashGlobal: GlobalConfig = {
+      slug: 'site-settings',
+      fields: [{ name: 'layout', type: 'blocks', blocks: [Heading] }],
+    }
+    expect(() => buildBlockNestingMap([ClashCollection], [ClashGlobal], [Heading])).toThrow(
+      /invariant violated/i,
+    )
+  })
+})
 
 describe('buildRelationshipGraph', () => {
   it('builds correct graph from sample collections', () => {

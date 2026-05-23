@@ -4,6 +4,241 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-05-23
+
+### Fixed
+- **Account-tool scope bypass under preset + resource override.** Keys that
+  combined a preset (e.g. `admin`) with an explicit
+  `collectionScopes`/`globalScopes` whitelist were correctly narrowed on
+  collection- and global-routed tools, but account-routed tools
+  (`searchContent`, `resolveReference`, `uploadMedia`) ignored the
+  whitelist and granted whatever the preset alone would have allowed —
+  letting a key pinned to `posts:read` search every collection or upload
+  media into any collection. `checkAccount` now denies account-routed
+  tools whenever the key carries any explicit collection or global scope,
+  since account-level tools span the whole site by design and cannot be
+  narrowed to a slug at call time.
+- **Excluded globals leaked into `blockNesting`.** `buildBlockNestingMap`
+  ran against the unfiltered `globals` list before
+  `options.exclude.globals` was applied, so an excluded global with a
+  blocks field still surfaced in `patchGlobalLayout`'s slug enum and in
+  the `blocks://nesting` resource body. The plugin entry now filters
+  collections and globals by their exclusion sets before building the
+  nesting map.
+- **Dev import map missing `GlobalScopesMatrix`.** `dev/app/(payload)/admin/importMap.js`
+  registered `CollectionScopesMatrix` only; opening the API Keys admin
+  view in the dev app under the Custom preset failed to resolve
+  `payload-mcp-toolkit/client#GlobalScopesMatrix`. The dev import map now
+  includes the global matrix export.
+
+### Added
+- **Optional `locale` arg on every global tool.** `findGlobal`,
+  `updateGlobal`, `patchGlobalLayout`, `publishGlobalDraft`,
+  `listGlobalVersions`, and `restoreGlobalVersion` now accept an optional
+  `locale` parameter that is forwarded to the underlying Payload Local API
+  call — lets MCP clients scope reads and writes to a single locale on
+  localized globals.
+- **CAS guard on global mutations.** `patchGlobalLayout` and
+  `restoreGlobalVersion` accept an optional `expectedUpdatedAt`. When set,
+  the tool fetches the current global, compares `updatedAt`, and aborts
+  with a "Conflict:" error if the value has changed since the caller's
+  prior read. Protects against lost writes when concurrent edits race.
+
+### Changed
+- **Admin scope-matrix copy.** The "Collection scopes" and "Global scopes"
+  matrix descriptions no longer claim the matrix is "only honoured when
+  the preset is Custom" — the registry honours saved overrides on a key
+  whenever they are populated, regardless of which preset is later
+  selected. The fields remain editable only under the Custom preset; the
+  copy now reflects the actual runtime semantics.
+
+### Removed
+- **`zodRefForDeps`** dead re-export of `z` from `src/registry.ts`. Was
+  never referenced internally or externally.
+
+## [0.6.0] - 2026-05-13
+
+### Added
+- **First-class globals support across the MCP surface.** Sites with Payload
+  globals can now read and write them through the toolkit:
+  - `findGlobal { slug, draft? }` — reads any global, stamps a preview URL on
+    draft documents when the global's `admin.livePreview` / `admin.preview`
+    is configured.
+  - `updateGlobal { slug, data }` — partial-merge update with the same prose
+    JSON contract as `updateDocument`; response message lists the changed
+    field names.
+  - `patchGlobalLayout { slug, layoutField, operation, blocks, index? }` —
+    surgical block-array edits on any `blocks`-typed field inside a global,
+    at any nesting depth. Mirrors `patchLayout`'s operation grammar.
+    Conditionally registered (only when at least one global has a blocks
+    field anywhere in its tree).
+  - `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` —
+    registered only for globals with `versions.drafts` enabled.
+  - `globals://schema` resource — JSON schema of every non-excluded global.
+  - `blocks://nesting` body now includes global-owned edges with
+    `ownerType: "global"`; existing collection-owned edges are unchanged.
+- **`KeyScopes.globals`** typed scope axis, keyed by global slug with the
+  `'read' | 'update'` action vocabulary. Mirrors `KeyScopes.collections`.
+- **Admin matrix UI gains a "Global scopes" table** beneath the existing
+  "Collection scopes" table under the Custom preset. The new table only
+  renders when at least one global is registered. Both matrices use a
+  shared `ScopesTable` renderer.
+- **`exclude.globals` honoured.** Excluded global slugs are filtered out of
+  every tool's Zod `slug` enum, the `globals://schema` resource, the
+  `blocks://nesting` edges for that global, and the `availableGlobals` array
+  passed to the admin matrix.
+
+### Changed
+- **Audit log shape change.** The per-tool audit log field `collectionArg`
+  is replaced by two fields:
+  - `targetSlug` — populated from `args.collection ?? args.slug`, so global
+    operations now appear in audit queries (previously they logged
+    `collectionArg: undefined`).
+  - `targetKind` — `'collection' | 'global' | 'account' | undefined`, derived
+    from the registry's tool-routing lookup.
+
+  Operators with SIEM rules or dashboards filtering on `collectionArg` must
+  update their queries. The rename is unconditional — there is no
+  compatibility alias because the original field misreports for global
+  operations and a half-deprecated field would muddy security audits.
+- **`editor` preset is intentionally read-only on globals.** Collections
+  under `editor` continue to get `['read', 'create', 'update']`; globals
+  under `editor` get `['read']` only. A typo on a global broadcasts
+  site-wide on a single write (site name, footer links, social handles) with
+  no per-document containment to fall back on, so editor-tier keys cannot
+  reach `updateGlobal` / `patchGlobalLayout`. To write globals from a
+  non-admin key, use the Custom preset with an explicit `globalScopes`
+  entry. This is a behaviour decision for the new surface, not a regression
+  of any prior behaviour — globals weren't reachable from any preset in
+  v0.5.
+- **`tools.allow` without an explicit resource scope is now a deny.**
+  Previously, `tools: { allow: ['updateDocument'] }` with no `collections`
+  map and no preset would allow `updateDocument` on every collection. The
+  fix lands now and applies symmetrically to collections and globals: when a
+  tool resolves to a collection or global kind and the corresponding scope
+  map is undefined AND `scopes.preset` is undefined, the call is denied
+  with `Tool "X" requires an explicit <kind> scope or preset on this API
+  key`. Operators relying on the `tools.allow`-only shape (not a documented
+  configuration) must add an explicit `collections` / `globals` map or a
+  preset.
+- **`collectionScopes` and `globalScopes` JSONB columns now store rows shaped
+  `{slug, actions}`** (previously `{collection, actions}` / `{global, actions}`).
+  composeScopes accepts both shapes for one release; v0.7 will drop the
+  legacy fallback. The shape change unifies the two scope axes under one
+  `ScopeRow` interface, dropping the `ScopesTable` `itemKey` prop.
+- **`scopes.collectionArg` log field is gone** (covered above).
+- **`BlockNestingEdge.ownerType` (exported TS type) widened** from
+  `'collection' | 'block'` to `'collection' | 'block' | 'global'`. Downstream
+  code consuming the `blocks://nesting` resource or the typed export via
+  exhaustive `switch` / discriminated-union narrowing must add a `'global'`
+  arm or a default branch. Runtime behaviour is unchanged for code that
+  ignores the new ownerType — existing collection/block edges still emit
+  with their original values.
+
+### Migration
+- Production deploys must run `pnpm payload migrate:create` after upgrading
+  to capture the new `globalScopes` JSONB column on `payload-mcp-api-keys`.
+  The plugin does not ship migrations because the host app owns its
+  migrations directory (consistent with v0.5). Local dev with `push: true`
+  auto-syncs the column on next `pnpm dev`.
+- Existing v0.5 admin-preset keys keep full access after upgrade. The new
+  `globalScopes` column reads as `null` on legacy rows; `composeScopes`
+  treats null/undefined/empty as "no override → preset applies", so
+  admin-preset keys retain `update` on globals.
+
+## [0.5.0] - 2026-05-12
+
+### Changed
+- **API-key scopes are now configured via typed admin fields.** The freehand
+  `scopes` JSON textarea is replaced by `preset` (Read-only / Editor / Admin /
+  Custom), `collectionScopes` (per-collection action whitelist, custom only),
+  `toolAllow` (tool whitelist, custom only), and `toolDeny` (deny-list, always
+  applied). Collection and tool dropdowns are populated at plugin-init time
+  from the host Payload config and the registered tool list. The runtime
+  `KeyScopes` shape consumed by the dispatch path is unchanged — typed fields
+  are composed into it at auth time.
+
+### Fixed
+- **Custom preset with no overrides now denies everything.** A regression
+  introduced earlier in this cycle made freshly-created keys (which default
+  to `preset: custom`) authenticate at full access until overrides were
+  added — the inverse of the intended fail-closed default. `composeScopes`
+  now emits an explicit deny-all shape (`{ collections: {}, tools: { allow:
+  [] } }`) for empty-overrides custom keys; partial-override custom keys
+  are unchanged. Caught by Codex review.
+
+### Removed
+- **Legacy `scopes` JSON column.** Dropped outright (no transitional release).
+  Existing v0.4.0 rows authenticate but carry no scopes (= full access) until
+  re-scoped via the admin UI.
+- **Legacy `mcpAccessSettings` lazy migration.** The v0.3.x → v0.4
+  on-first-lookup translator and the hidden `mcpAccessSettings` column are
+  gone. v0.3.x rows authenticate but carry no scopes — re-scope them from
+  the admin UI.
+
+### Known limitations
+- **Browser MCP clients are not yet supported end-to-end.** The
+  `auth.allowedOrigins` option restricts which origins may call `/api/mcp`,
+  but the endpoint does not yet emit CORS response headers or handle the
+  `OPTIONS` preflight that browsers send before authenticated cross-origin
+  POSTs. Server-to-server callers (backend scripts, Claude Desktop's local
+  connector) are unaffected. Browser support will land in a follow-up
+  release once there's a concrete client to validate against.
+
+## [0.4.0] - 2026-05-05
+
+### Added
+- **Standalone plugin.** The toolkit now owns the `/api/mcp` endpoint, the
+  `payload-mcp-api-keys` collection, and bearer authentication via Payload's
+  native `auth.strategies` extension point. `@payloadcms/plugin-mcp` is no
+  longer a dependency or peer dependency.
+- **Scoped per-key authorization.** New `scopes` JSON field on API-key rows
+  with three role presets (`read-only`, `editor`, `admin`), per-collection
+  action overrides, and per-tool allow/deny lists. Tool-call dispatch
+  enforces the resolved scopes and returns spec-compliant `isError: true`
+  results on rejection (no JSON-RPC error codes, so the LLM can self-correct).
+- **Lifecycle fields** on the API-keys collection: `name`, `description`,
+  `expiresAt`, `revokedAt`, `lastUsedAt`, `keyPrefix`. `lastUsedAt` is
+  written fire-and-forget; the request hot path is never blocked on the write.
+- **`findDocument`** — polymorphic find tool keyed by `collection` arg.
+  Mirrors `createDocument` / `updateDocument` shape. Decorates draft
+  documents with preview URLs.
+- **`deleteDocument`** — fast unsafe delete for surgical use; `safeDelete`
+  remains the recommended default.
+- **Plugin-conflict detection.** Boot fails fast with an actionable upgrade
+  message if `@payloadcms/plugin-mcp` is also registered, or if another
+  collection has taken the api-keys slug.
+- **Origin / Host validation** on `/api/mcp` POST mitigates DNS-rebinding
+  attacks against local Payload instances. CORS defaults to no-browsers
+  (server-to-server only); explicit opt-in via `auth.allowedOrigins`.
+- **Audit logging** on every tool call: structured `req.payload.logger`
+  entry with `keyId`, `keyPrefix`, `tool`, `collectionArg`, `dataKeys`
+  (top-level keys only — never values), `success`, `isError`, `durationMs`,
+  `requestId`, `errorClass`. Long string args are summarised as
+  `<truncated:N>` to keep logs bounded.
+
+### Changed
+- The bearer auth strategy reuses Payload's built-in `useAPIKey: true`
+  columns and HMAC formula so existing v0.3.x API-key rows authenticate
+  without re-issue.
+- v0.3.x's dynamic `mcpAccessSettings` field tree is replaced by the new
+  `scopes` JSON column. The first authenticated request from each existing
+  key lazily translates its old per-collection / per-tool flags and persists
+  the result. The legacy column is retained (hidden) for one release; it
+  will be dropped in v0.5.
+- `draft-workflow.ts` slimmed to `getDraftBehavior` + `computeDraftCollections`.
+  The plugin no longer produces an upstream `mcpCollections` config object.
+
+### Removed
+- `@payloadcms/plugin-mcp` peer dependency.
+- `generateMcpCollectionConfigs` / `createOverrideResponse` /
+  `resolvePreviewUrl` from `draft-workflow.ts`. Preview decoration now lives
+  in `tools/_helpers.ts` as `decorateDraftResponse` + `resolvePreviewUrl`,
+  reusable across find/create/update tools.
+
+### Migration
+See [README → Upgrading from 0.3.x](./README.md#upgrading-from-03x).
+
 ## [0.3.4] - 2026-05-04
 
 ### Added

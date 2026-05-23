@@ -45,6 +45,7 @@ export function createCreateDocumentTool(
 
   return {
     name: 'createDocument',
+    routing: { kind: 'collection', action: 'create' } as const,
     description:
       'Create a new document in any collection. Pass the field values as a JSON string in `data`. ' +
       'For draft-enabled collections, the document is created as a draft by default — use publishDraft to make it live, ' +
@@ -73,15 +74,19 @@ export function createCreateDocumentTool(
         ),
     },
     handler: async (
-      args: { collection: string; data: string; draft?: boolean },
+      args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection } = args
+      const { collection, data: rawData, draft } = args as {
+        collection: string
+        data: string
+        draft?: boolean
+      }
 
       let data: Record<string, unknown>
       try {
-        data = JSON.parse(args.data)
+        data = JSON.parse(rawData)
       } catch {
         return textResponse(
           'Error: "data" must be a valid JSON string. Example: \'{"name": "Aria", "slug": "aria"}\'',
@@ -107,7 +112,7 @@ export function createCreateDocumentTool(
       stampMcpContext(req)
 
       const isDraftCollection = draftCollections.has(collection)
-      const asDraft = args.draft ?? isDraftCollection
+      const asDraft = draft ?? isDraftCollection
 
       try {
         const doc = await req.payload.create({

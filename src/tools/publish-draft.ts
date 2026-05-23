@@ -11,6 +11,7 @@ import {
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {
     name: 'publishDraft',
+    routing: { kind: 'collection', action: 'update' } as const,
     description:
       'Publish a draft document by transitioning its _status from "draft" to "published". ' +
       'Only works on collections that support drafts. Use after creating or editing content ' +
@@ -24,10 +25,11 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
       documentId: z.string().describe('The ID of the document to publish'),
     },
     handler: async (
-      args: { collection: string; documentId: string },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string }
       const { collection, documentId } = args
 
       const guard = requireDraftCollection(collection, draftCollections)

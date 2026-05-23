@@ -50,6 +50,7 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
 
   return {
     name: 'safeDelete',
+    routing: { kind: 'collection', action: 'delete' } as const,
     description:
       'Delete a document only after checking for inbound relationships. ' +
       'If other documents reference the target, the delete is refused unless `confirm` is true. ' +
@@ -68,10 +69,11 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
         ),
     },
     handler: async (
-      args: { collection: string; documentId: string; confirm?: boolean },
+      rawArgs: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
+      const args = rawArgs as { collection: string; documentId: string; confirm?: boolean }
       const { collection, documentId, confirm = false } = args
 
       stampMcpContext(req)

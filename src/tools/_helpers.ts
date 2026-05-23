@@ -1,4 +1,4 @@
-import type { PayloadRequest } from 'payload'
+import type { CollectionConfig, PayloadRequest } from 'payload'
 
 export interface McpTextResponse {
   content: Array<{ type: 'text'; text: string }>
@@ -42,4 +42,81 @@ export function requireDraftCollection(
     `Error: Collection "${collection}" does not support ${noun}. ` +
       `Draft-enabled collections: ${[...draftCollections].join(', ') || 'none'}`,
   )
+}
+
+/**
+ * Resolves the preview URL for a draft document by delegating to the
+ * collection's own configured preview function (`admin.livePreview.url`
+ * preferred, then `admin.preview`). Returns null when no function is
+ * configured, when it fails, or when it returns a relative path with no
+ * absolute `siteUrl` to anchor it.
+ */
+export async function resolvePreviewUrl(
+  collection: CollectionConfig,
+  doc: Record<string, unknown>,
+  req: PayloadRequest,
+  siteUrl: string | undefined,
+): Promise<string | null> {
+  const admin = (collection.admin ?? {}) as Record<string, any>
+  const locale = (req as unknown as { locale?: string }).locale ?? 'en'
+
+  let raw: string | null | undefined
+
+  const livePreviewUrl = admin.livePreview?.url
+  if (typeof livePreviewUrl === 'function') {
+    try {
+      raw = await livePreviewUrl({
+        data: doc,
+        locale: { code: locale, label: locale },
+        req,
+        payload: req.payload,
+        collectionConfig: collection,
+      })
+    } catch {
+      raw = null
+    }
+  } else if (typeof livePreviewUrl === 'string') {
+    raw = livePreviewUrl
+  }
+
+  if (!raw && typeof admin.preview === 'function') {
+    try {
+      raw = await admin.preview(doc, { locale, req, token: null })
+    } catch {
+      raw = null
+    }
+  }
+
+  if (!raw || typeof raw !== 'string') return null
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  if (!siteUrl) return null
+
+  const base = siteUrl.endsWith('/') ? siteUrl.slice(0, -1) : siteUrl
+  const path = raw.startsWith('/') ? raw : `/${raw}`
+  return `${base}${path}`
+}
+
+/**
+ * If `doc` is a draft, appends a preview-URL hint to the MCP response so the
+ * AI can present it to the user. Falls back to a generic admin-panel hint
+ * when the collection has no preview function configured.
+ *
+ * Pure with respect to the response: a fresh content array is returned.
+ */
+export async function decorateDraftResponse(
+  response: McpTextResponse,
+  doc: Record<string, unknown> | null | undefined,
+  collection: CollectionConfig | undefined,
+  req: PayloadRequest,
+  siteUrl: string | undefined,
+): Promise<McpTextResponse> {
+  if (!doc || doc._status !== 'draft' || !collection) return response
+
+  const previewUrl = await resolvePreviewUrl(collection, doc, req, siteUrl)
+  const hint = previewUrl
+    ? `\n📋 This document is a draft. Preview it here: ${previewUrl}`
+    : '\n📋 This document is a draft. Use the admin panel to preview it.'
+
+  return { content: [...response.content, { type: 'text', text: hint }] }
 }
