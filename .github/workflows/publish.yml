@@ -38,19 +38,18 @@ jobs:
 
       - run: pnpm build
 
-      - name: Diagnose .npmrc state right before publish
+      # Bridge GitHub Actions OIDC to npm's expected env var. The npm CLI
+      # does NOT auto-discover ACTIONS_ID_TOKEN_REQUEST_* — it reads
+      # NPM_ID_TOKEN (a convention shared with GitLab CI). Request a token
+      # with audience `npm:registry.npmjs.org` which npm exchanges for a
+      # short-lived publish credential.
+      - name: Request npm OIDC token
         run: |
-          echo "--- npm config get userconfig ---"
-          npm config get userconfig
-          echo "--- userconfig contents ---"
-          cat "$(npm config get userconfig)" 2>&1 || echo "(missing)"
-          echo "--- cwd .npmrc ---"
-          cat .npmrc 2>&1 || echo "(missing)"
-          echo "--- env NODE_AUTH_TOKEN ---"
-          if [ -n "$NODE_AUTH_TOKEN" ]; then echo "set (len ${#NODE_AUTH_TOKEN})"; else echo "empty"; fi
+          NPM_ID_TOKEN=$(curl -sSf \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+            | jq -r .value)
+          echo "::add-mask::$NPM_ID_TOKEN"
+          echo "NPM_ID_TOKEN=$NPM_ID_TOKEN" >> "$GITHUB_ENV"
 
-      # --ignore-scripts skips package.json lifecycle hooks (including
-      # prepublishOnly which re-runs pnpm clean/build/test). Tests + build
-      # already ran in earlier workflow steps, so prepublishOnly is
-      # redundant in CI and may inject a tainted .npmrc that shadows OIDC.
-      - run: npm publish --access public --provenance --ignore-scripts --loglevel verbose
+      - run: npm publish --access public --ignore-scripts --loglevel verbose
