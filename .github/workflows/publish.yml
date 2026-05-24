@@ -52,4 +52,14 @@ jobs:
           echo "::add-mask::$NPM_ID_TOKEN"
           echo "NPM_ID_TOKEN=$NPM_ID_TOKEN" >> "$GITHUB_ENV"
 
-      - run: npm publish --access public --ignore-scripts --loglevel verbose
+      - run: npm publish --access public --ignore-scripts --loglevel silly 2>&1 | tee /tmp/publish-output.log; exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Dump 403 response body
+        if: always()
+        run: |
+          echo "--- last 100 lines of publish output ---"
+          tail -100 /tmp/publish-output.log
+          echo "--- npm debug log ---"
+          ls -la /home/runner/.npm/_logs/ 2>&1
+          cat /home/runner/.npm/_logs/*.log 2>&1 | grep -iE "403|forbidden|provenance|attest|policy|reason|message" | tail -30 || echo "(no relevant lines)"
