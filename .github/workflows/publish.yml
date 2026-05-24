@@ -39,6 +39,26 @@ jobs:
 
       - run: pnpm build
 
+      - name: Diagnose OIDC + npm version (temporary)
+        run: |
+          echo "--- npm version ---"
+          npm --version
+          echo "--- OIDC env present? ---"
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is set (OIDC available)"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_URL is EMPTY — id-token:write not effective"
+          fi
+          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN" ]; then
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is set"
+          else
+            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is EMPTY"
+          fi
+          echo "--- .npmrc contents ---"
+          cat ${NPM_CONFIG_USERCONFIG:-~/.npmrc} 2>&1 || echo "(no userconfig)"
+          echo "--- npm whoami (anon expected if OIDC-only) ---"
+          npm whoami 2>&1 || echo "whoami unauth (expected for OIDC-only)"
+
       # Authenticated via GitHub Actions OIDC (Trusted Publishing configured on
       # the npm package). No NPM_TOKEN required; the `id-token: write`
       # permission at the workflow level exposes the OIDC claim that npm
