@@ -4,6 +4,64 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] - 2026-05-24
+
+### Fixed
+- **`publishDraft` / `publishGlobalDraft` no longer falsely report success when a
+  publish attempt fails against a document that already has a published version
+  from an earlier successful publish.** The previous recovery branch caught the
+  Payload validator-after-version-row-commit throw and re-read the live doc with
+  `draft: false`; if `_status === 'published'` was returned, the tool emitted a
+  success-with-warning. That logic could not distinguish "this attempt landed
+  despite the validator throw" from "a prior publish was successful and this
+  attempt did nothing", so a real publish failure silently looked like success.
+  Recovery now snapshots `updatedAt` before the update and only downgrades to a
+  warning when the post-throw live read shows `_status === 'published'` AND a
+  strictly newer `updatedAt`. Pre-snapshot or verify-read failures conservatively
+  fall through to the original error path.
+- **API-key field descriptions now match the v0.7.1 override semantics.** Under
+  the Custom preset, an empty `toolAllow` is treated as deny-all ONLY when no
+  collection or global scopes are set (the fresh-Custom sentinel); when
+  resource scopes are populated, the empty `toolAllow` collapses to "no tool
+  restriction" so the resource scopes alone gate access. The preset field also
+  documents that switching away from Custom clears every override on save and
+  re-entering Custom starts from a fresh deny-all baseline.
+- **`composeScopes` docstring updated** to reflect that the per-axis explicit-
+  empty=deny rule is Custom-only and that the on-write counterpart lives in the
+  API-keys `beforeValidate` hook. Legacy non-Custom rows persisted before v0.7.1
+  with populated stale override arrays continue to narrow on read until each
+  row is manually re-saved.
+
+### Added
+- **Machine-parseable token in publish recovery responses.** Both
+  `publishDraft` and `publishGlobalDraft` prefix the success-with-warning text
+  with a stable token (`[publishDraft:published_with_warning]` /
+  `[publishGlobalDraft:published_with_warning]`) so MCP clients can branch on
+  the partial-success state without regex-matching prose.
+- **Test coverage for the publish post-write recovery branch** (`__tests__/publish-draft.test.ts`),
+  the Custom→Admin→Custom round-trip, the partial-form-submission
+  beforeValidate path, and the `toolDeny` non-Custom asymmetry in
+  `composeScopes`.
+
+### Internal
+- Extracted `snapshotPublishMarker` and `verifyPublishSucceededDespiteError`
+  into `tools/_helpers.ts` so the two publish tools share one implementation.
+- `publishGlobalDraft` recovery now passes `fallbackLocale: false` on the
+  snapshot and verify reads when a locale is supplied, so the verify reflects
+  the literal `_status` of the requested locale instead of inheriting a
+  different locale's published state.
+- `composeScopes` emits a one-time `mcp.auth.legacy_non_custom_override` warn
+  when a non-Custom preset row carries populated override arrays (likely a
+  pre-v0.7.1 row carried over from a prior Custom configuration). The
+  narrowing still applies on read — re-save affected keys to clear the
+  warning.
+- Typed the `payload-mcp-api-keys` `beforeValidate` hook with
+  `CollectionBeforeValidateHook` from Payload; consolidated the data /
+  originalDoc field-read pattern in the hook body behind `readField` and
+  `isNonEmptyArray` / `isEmptyArray` helpers; renamed `composeScopes`
+  internals from `*ScopesActive` to `emit*Scopes` to match the existing
+  `emitDeny` precedent.
+
 ## [0.7.0] - 2026-05-23
 
 ### Changed (breaking)

@@ -39,6 +39,124 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function asIsoString(v: unknown): string | undefined {
+  if (typeof v === 'string') return v
+  if (v instanceof Date) return v.toISOString()
+  return undefined
+}
+
+export type PublishVerifyTarget =
+  | { kind: 'collection'; slug: string; id: string }
+  | { kind: 'global'; slug: string; locale?: string }
+
+/**
+ * Capture the document's current `updatedAt` BEFORE a publish attempt so
+ * the recovery branch can tell "this attempt landed despite a post-write
+ * validator throw" from "an older publish was successful and this attempt
+ * did nothing". A missing snapshot is non-fatal — the recovery branch
+ * conservatively falls through to the original error in that case.
+ */
+export async function snapshotPublishMarker(
+  req: PayloadRequest,
+  target: PublishVerifyTarget,
+): Promise<string | undefined> {
+  try {
+    const pre =
+      target.kind === 'collection'
+        ? await req.payload.findByID({
+            collection: target.slug as any,
+            id: target.id,
+            draft: true,
+            depth: 0,
+            req,
+            overrideAccess: false,
+            user: req.user,
+          })
+        : await req.payload.findGlobal({
+            slug: target.slug as never,
+            draft: true,
+            depth: 0,
+            // `fallbackLocale: false` disables Payload's locale-fallback so
+            // the read returns the literal state of the requested locale.
+            // Without this, a localized global with fallbackLocale='en'
+            // could report the 'en' updatedAt while the caller is
+            // publishing 'de', producing a false-positive in
+            // verifyPublishSucceededDespiteError.
+            ...(target.locale
+              ? { locale: target.locale as never, fallbackLocale: false as never }
+              : {}),
+            req,
+            overrideAccess: false,
+            user: req.user,
+          })
+    return asIsoString((pre as { updatedAt?: unknown } | null | undefined)?.updatedAt)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * After a Payload update throws on a publish call, determine whether the
+ * publish actually landed despite the error. Returns the live document
+ * only when (a) the live `_status` is 'published' AND (b) `updatedAt`
+ * strictly advanced past the pre-update snapshot — i.e. the current
+ * attempt produced the published row. Without the strictly-newer check,
+ * a pre-existing published version from an earlier successful publish
+ * would mask a real failure of the current attempt.
+ *
+ * Returns null on:
+ *   - missing pre-snapshot (cannot disambiguate; conservative)
+ *   - verify read failure (do not mask the original error with a
+ *     secondary read error)
+ *   - live `_status` not 'published'
+ *   - live `updatedAt` not strictly newer than the pre-snapshot
+ */
+export async function verifyPublishSucceededDespiteError(
+  req: PayloadRequest,
+  target: PublishVerifyTarget,
+  preUpdatedAt: string | undefined,
+): Promise<Record<string, unknown> | null> {
+  if (!preUpdatedAt) return null
+  try {
+    const live =
+      target.kind === 'collection'
+        ? await req.payload.findByID({
+            collection: target.slug as any,
+            id: target.id,
+            draft: false,
+            depth: 0,
+            req,
+            overrideAccess: false,
+            user: req.user,
+          })
+        : await req.payload.findGlobal({
+            slug: target.slug as never,
+            draft: false,
+            depth: 0,
+            // Disable Payload locale-fallback (see snapshotPublishMarker
+            // note) so verify reads the literal state of the locale that
+            // updateGlobal was called against.
+            ...(target.locale
+              ? { locale: target.locale as never, fallbackLocale: false as never }
+              : {}),
+            req,
+            overrideAccess: false,
+            user: req.user,
+          })
+    const d = live as Record<string, unknown> | null | undefined
+    if (!d || d._status !== 'published') return null
+    const liveUpdatedAt = asIsoString(d.updatedAt)
+    if (!liveUpdatedAt || liveUpdatedAt <= preUpdatedAt) return null
+    return d
+  } catch (verifyError) {
+    req.payload.logger?.debug?.(
+      { event: 'mcp.publish.verify_read_failed', err: verifyError },
+      '[payload-mcp-toolkit] publish-recovery verify-read failed; surfacing original error',
+    )
+    return null
+  }
+}
+
 export function stampMcpContext(req: PayloadRequest): void {
   req.context = { ...req.context, source: 'mcp' }
 }

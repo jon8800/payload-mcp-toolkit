@@ -50,6 +50,14 @@ interface ApiKeyRow {
  * scheduled for removal in v0.7.
  */
 let warnedLegacyShape = false
+let warnedLegacyNonCustomOverride = false
+
+/** @internal test-only: reset the one-time legacy warns. */
+export function _resetLegacyWarnsForTests(): void {
+  warnedLegacyShape = false
+  warnedLegacyNonCustomOverride = false
+}
+
 function readScopeSlug(
   entry: ScopeRow,
   legacyKey: 'collection' | 'global',
@@ -91,13 +99,22 @@ const VALID_GLOBAL_ACTIONS: ReadonlySet<GlobalAction> = new Set(['read', 'update
  *    full access). The sentinel emits `{collections:{}, globals:{},
  *    tools:{allow:[]}}`.
  *
- * 2. **Per-axis explicit-empty.** When a row carries an array value on any
- *    axis (even `[]`), that axis is honoured as written — an empty
- *    `toolAllow:[]` means "deny all tools", not "no opinion". This closes a
- *    gap where a Custom key with `collectionScopes` populated AND
- *    `toolAllow:[]` previously emitted no `tools.allow` gate (the empty
- *    array was treated as absent). `toolDeny` is a deny-list, so an empty
- *    array carries no entries — it is dropped rather than emitted.
+ * 2. **Per-axis explicit-empty, Custom-only.** Under the Custom preset, an
+ *    empty array on any axis (even `[]`) is honoured as written — an empty
+ *    `toolAllow:[]` means "deny all tools on this axis", not "no opinion".
+ *    Under non-Custom presets, empty arrays are IGNORED because Payload's
+ *    hasMany / unpopulated-JSON reads return `[]` for fields the user
+ *    never touched (the override matrices are hidden in the admin UI under
+ *    non-Custom presets via `condition: isCustomPreset`). The on-write
+ *    counterpart of this rule lives in `createApiKeysCollection`'s
+ *    `beforeValidate` hook, which proactively nulls the override axes on
+ *    save when the preset is non-Custom — both layers must stay in sync.
+ *    Non-empty arrays still apply as layered narrowing under any preset.
+ *    `toolDeny` is a deny-list, so an empty array carries no entries — it
+ *    is dropped rather than emitted. NOTE: legacy non-Custom rows persisted
+ *    BEFORE v0.7.1 with populated stale override arrays continue to narrow
+ *    on read until each row is manually re-saved; the on-write fix only
+ *    applies to fresh writes.
  */
 export function composeScopes(
   row: ApiKeyRow,
@@ -136,11 +153,52 @@ export function composeScopes(
   }
 
   const out: KeyScopes = {}
-  if (hasPreset && presetRaw !== 'custom') {
+  const isCustomPreset = presetRaw === 'custom'
+  if (hasPreset && !isCustomPreset) {
     out.preset = presetRaw as ScopePreset
   }
 
-  if (hasCollectionScopesField) {
+  // Under non-Custom presets, the override fields are hidden in the admin
+  // UI (`condition: isCustomPreset`) and Payload's hasMany / relational
+  // reads return `[]` for unpopulated relations even when the user never
+  // touched them. Treating that `[]` as "deny-all on this axis" turns
+  // every preset key into a deny-all key once it round-trips through the
+  // DB. Apply the explicit-empty-means-deny semantic only when the user
+  // is on the Custom preset (where the override fields are visible and
+  // meaningful); under preset modes, ignore empty arrays so that the
+  // preset alone drives access. Non-empty arrays still apply as layered
+  // narrowing, matching the field description ("layered on top of preset
+  // and collection scopes").
+  const treatEmptyAsScope = isCustomPreset
+
+  // Legacy-row warn: non-Custom preset rows persisted BEFORE v0.7.1 may
+  // carry populated override arrays from a prior Custom configuration
+  // (the on-write null-out hook landed in v0.7.1). These still apply as
+  // layered narrowing on read — fail-closed-safe (narrows, never widens)
+  // but may not match operator intent. Warn once per process so legacy
+  // rows can be audited and re-saved.
+  if (
+    hasPreset &&
+    !isCustomPreset &&
+    !warnedLegacyNonCustomOverride &&
+    ((hasCollectionScopesField && (row.collectionScopes as unknown[]).length > 0) ||
+      (hasGlobalScopesField && (row.globalScopes as unknown[]).length > 0) ||
+      (hasToolAllowField && (row.toolAllow as unknown[]).length > 0))
+  ) {
+    warnedLegacyNonCustomOverride = true
+    logger?.warn?.(
+      { event: 'mcp.auth.legacy_non_custom_override' },
+      `[payload-mcp-toolkit] composeScopes read an API key with a non-Custom preset (${presetRaw}) ` +
+        `carrying populated override arrays. These still narrow access as written, but the ` +
+        `v0.7.1 admin UI clears overrides on preset switch — re-save affected keys to align ` +
+        `persisted state with current admin semantics.`,
+    )
+  }
+
+  const emitCollectionScopes =
+    hasCollectionScopesField &&
+    (treatEmptyAsScope || (row.collectionScopes as unknown[]).length > 0)
+  if (emitCollectionScopes) {
     const collections: Record<string, CollectionAction[]> = {}
     for (const entry of row.collectionScopes as ScopeRow[]) {
       const slug = readScopeSlug(entry, 'collection', logger)
@@ -154,7 +212,10 @@ export function composeScopes(
     out.collections = collections
   }
 
-  if (hasGlobalScopesField) {
+  const emitGlobalScopes =
+    hasGlobalScopesField &&
+    (treatEmptyAsScope || (row.globalScopes as unknown[]).length > 0)
+  if (emitGlobalScopes) {
     const globals: Record<string, GlobalAction[]> = {}
     for (const entry of row.globalScopes as ScopeRow[]) {
       const slug = readScopeSlug(entry, 'global', logger)
@@ -172,10 +233,13 @@ export function composeScopes(
     ? (row.toolDeny as unknown[]).filter((t): t is string => typeof t === 'string')
     : []
   const emitDeny = toolDeny.length > 0
+  const emitToolAllow =
+    hasToolAllowField &&
+    (treatEmptyAsScope || (row.toolAllow as unknown[]).length > 0)
 
-  if (hasToolAllowField || emitDeny) {
+  if (emitToolAllow || emitDeny) {
     out.tools = {}
-    if (hasToolAllowField) {
+    if (emitToolAllow) {
       const toolAllow = (row.toolAllow as unknown[]).filter((t): t is string => typeof t === 'string')
       out.tools.allow = toolAllow
     }

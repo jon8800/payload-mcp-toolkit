@@ -4,6 +4,7 @@ import {
   AUTH_STRATEGY_NAME,
   getApiKeyContext,
   composeScopes,
+  _resetLegacyWarnsForTests,
 } from '../auth-strategy'
 import { hashKey } from '../hash'
 
@@ -147,17 +148,71 @@ describe('composeScopes', () => {
     expect(out).toEqual({ preset: 'admin' })
   })
 
-  it('preset editor + globalScopes: [] (explicit empty) emits explicit deny-all on the globals axis', () => {
-    // Axis-independent rule: an explicit empty array commits "no globals
-    // allowed" even when a preset is set. Use globalScopes: null (or omit
-    // the field) to fall through to the preset default.
+  it('preset editor + globalScopes: [] is ignored — empty arrays under non-Custom presets carry no opinion', () => {
+    // Under non-Custom presets the override fields are hidden in the admin
+    // UI and Payload's hasMany / relational reads return `[]` for unset
+    // relations. Empty arrays would otherwise turn every preset key into a
+    // deny-all key once it round-trips through the DB. The explicit-empty
+    // deny-all semantic is reserved for the Custom preset, where the
+    // override fields are visible and meaningful.
     const out = composeScopes({ ...baseRow, preset: 'editor', globalScopes: [] })
-    expect(out).toEqual({ preset: 'editor', globals: {} })
+    expect(out).toEqual({ preset: 'editor' })
   })
 
-  it('preset editor + collectionScopes: [] (explicit empty) emits explicit deny-all on the collections axis', () => {
+  it('preset editor + collectionScopes: [] is ignored under non-Custom presets', () => {
     const out = composeScopes({ ...baseRow, preset: 'editor', collectionScopes: [] })
-    expect(out).toEqual({ preset: 'editor', collections: {} })
+    expect(out).toEqual({ preset: 'editor' })
+  })
+
+  it('preset admin + toolAllow: [] is ignored (Payload hasMany default does not deny-all under preset modes)', () => {
+    const out = composeScopes({ ...baseRow, preset: 'admin', toolAllow: [] })
+    expect(out).toEqual({ preset: 'admin' })
+  })
+
+  it('preset editor + populated globalScopes still applies as a layered narrowing', () => {
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'editor',
+      globalScopes: [{ slug: 'siteSettings', actions: ['read'] }],
+    })
+    expect(out).toEqual({ preset: 'editor', globals: { siteSettings: ['read'] } })
+  })
+
+  it('emits a one-time warn when a non-Custom row carries populated override arrays (legacy v0.7.0 row audit nudge)', () => {
+    _resetLegacyWarnsForTests()
+    const logger = { warn: vi.fn() }
+    composeScopes(
+      {
+        ...baseRow,
+        preset: 'admin',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+      },
+      logger,
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'mcp.auth.legacy_non_custom_override' }),
+      expect.stringContaining('non-Custom preset (admin)'),
+    )
+    // Second row with the same shape does not double-log within the process.
+    composeScopes(
+      {
+        ...baseRow,
+        preset: 'editor',
+        toolAllow: ['findDocument'],
+      },
+      logger,
+    )
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('preset admin + populated toolDeny still emits the deny axis (deny-lists are never gated by the empty-array rule)', () => {
+    // toolDeny is asymmetric to toolAllow: a populated deny list expresses
+    // intent independently of the preset, and an empty deny carries no
+    // entries (dropped). The empty-array-under-non-Custom-ignored rule
+    // applies only to allow-shaped axes (collectionScopes, globalScopes,
+    // toolAllow); toolDeny is unconditional.
+    const out = composeScopes({ ...baseRow, preset: 'admin', toolDeny: ['safeDelete'] })
+    expect(out).toEqual({ preset: 'admin', tools: { deny: ['safeDelete'] } })
   })
 
   it('preset custom + populated collectionScopes + explicit toolAllow: [] honours both axes', () => {

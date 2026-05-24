@@ -1,4 +1,4 @@
-import type { CollectionConfig, Field } from 'payload'
+import type { CollectionBeforeValidateHook, CollectionConfig, Field } from 'payload'
 
 export const API_KEYS_DEFAULT_SLUG = 'payload-mcp-api-keys'
 
@@ -89,7 +89,10 @@ export function createApiKeysCollection(
     options: PRESET_OPTIONS as unknown as { label: string; value: string }[],
     admin: {
       description:
-        'Role preset. "Custom" unlocks the per-collection matrix and the tool overrides below.',
+        'Role preset. "Custom" unlocks the per-collection matrix and the tool overrides below. ' +
+        'Switching away from Custom CLEARS every override on save (collectionScopes, globalScopes, ' +
+        'toolAllow, toolDeny); switching back to Custom starts from a fresh deny-all baseline, so ' +
+        'reconfigure the matrices and tool lists before saving.',
     },
   }
 
@@ -159,7 +162,14 @@ export function createApiKeysCollection(
         options: toolOptions,
         admin: {
           description:
-            'If set, only these tools are callable with this key. Leave empty to allow any tool the collection scopes permit. Under the Custom preset, an explicit empty list is treated as deny-all on this axis; preset-mode keys created via the REST API with an empty list are coerced to "no restriction".',
+            'If set, only these tools are callable with this key. Leave empty to allow any tool ' +
+            'the collection or global scopes permit. Under the Custom preset, an empty list is ' +
+            'treated as deny-all ONLY when no collection or global scopes are set (the fresh- ' +
+            'Custom-key sentinel); when collection or global scopes are populated, an empty list ' +
+            'collapses to "no tool restriction" so the resource scopes alone determine what is ' +
+            'callable — to deny every tool while keeping resource scopes, enumerate them in ' +
+            'toolDeny instead. Preset-mode keys created via the REST API with an empty list are ' +
+            'coerced to "no restriction".',
         },
       },
       {
@@ -189,27 +199,76 @@ export function createApiKeysCollection(
     },
     hooks: {
       beforeValidate: [
-        ({ data }) => {
-          // REST clients that create a key with a preset (e.g. admin) but
-          // omit toolAllow / toolDeny would hit Payload's hasMany-select
-          // default of `[]`, which composeScopes correctly interprets as
-          // "deny-all on this axis" (v0.6 Track A). That is the right
-          // semantic for explicit-Custom configurations but a UX trap for
-          // preset-mode keys created via the REST API. Collapse empty
-          // arrays to null when the key is NOT on the Custom preset, so
-          // preset-driven access flows through unimpeded. Custom-preset
-          // keys keep the explicit-empty-means-deny semantic intact.
+        (({ data, originalDoc }) => {
+          // The override fields (collectionScopes, globalScopes, toolAllow,
+          // toolDeny) are conditionally rendered only under the Custom preset
+          // (`condition: isCustomPreset`). Under any other preset they are
+          // hidden in the admin UI, which means two things:
+          //
+          //   1. The admin form omits hidden fields from its payload on save,
+          //      so `data` only carries the visible fields — we can't
+          //      "collapse the empty array we see in `data`" because we never
+          //      see it at all. The stale value lives on `originalDoc`.
+          //   2. A Custom→Admin switch silently keeps the prior
+          //      `toolAllow:[...]` / `collectionScopes:[...]`, and
+          //      `composeScopes` then emits a scope gate that rejects calls
+          //      the user clearly intended to allow.
+          //
+          // Fix: when the preset is non-Custom, explicitly write `null` into
+          // `data` for every override axis (regardless of what `data` carries
+          // or what originalDoc holds). Payload persists nulls, so the stale
+          // values are erased on every save. The Custom-preset branch below
+          // keeps the explicit-empty-means-deny semantic intact.
           if (!data) return data
-          const preset = (data as { preset?: unknown }).preset
-          if (preset === 'custom') return data
-          for (const axis of ['toolAllow', 'toolDeny'] as const) {
-            const v = (data as Record<string, unknown>)[axis]
-            if (Array.isArray(v) && v.length === 0) {
-              ;(data as Record<string, unknown>)[axis] = null
-            }
+          const d = data as Record<string, unknown>
+          const orig = (originalDoc ?? {}) as Record<string, unknown>
+          const preset = d.preset ?? orig.preset
+
+          // `readField` falls through to originalDoc when `data` omits the
+          // key entirely (admin form skipping hidden fields), but honours
+          // an explicit null/empty in `data` over originalDoc.
+          const readField = (key: string): unknown =>
+            key in d ? d[key] : orig[key]
+          const isNonEmptyArray = (v: unknown): boolean =>
+            Array.isArray(v) && v.length > 0
+          const isEmptyArray = (v: unknown): boolean =>
+            Array.isArray(v) && v.length === 0
+
+          const OVERRIDE_AXES = [
+            'collectionScopes',
+            'globalScopes',
+            'toolAllow',
+            'toolDeny',
+          ] as const
+
+          if (preset !== 'custom') {
+            for (const axis of OVERRIDE_AXES) d[axis] = null
+            return data
+          }
+
+          // Custom preset: the Tools collapsible is labelled as an *override*
+          // layered on top of collection / global scopes, and its description
+          // says "Leave empty to allow any tool the collection scopes permit."
+          // Payload's hasMany-select default of `[]` would otherwise turn the
+          // Tools section into a mandatory whitelist — a user who configures
+          // collection scopes and never opens the collapsible would silently
+          // store `toolAllow:[]`, which `composeScopes` honours as deny-all on
+          // the tools axis and rejects every call.
+          //
+          // Resolve the mismatch by coercing an empty `toolAllow` to null
+          // whenever the key carries any concrete resource scope (collection
+          // or global entries). The fresh-Custom-key sentinel in
+          // `composeScopes` still covers the "no scopes at all" case
+          // (everything null → deny-all), so users who genuinely want
+          // deny-all do not regress.
+          const hasResourceScope =
+            isNonEmptyArray(readField('collectionScopes')) ||
+            isNonEmptyArray(readField('globalScopes'))
+          if (hasResourceScope && isEmptyArray(readField('toolAllow'))) {
+            d.toolAllow = null
           }
           return data
-        },
+        }) as CollectionBeforeValidateHook,
       ],
     },
     labels: {

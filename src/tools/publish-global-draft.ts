@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { errorMessage, slugEnum, stampMcpContext, textResponse } from './_helpers'
+import {
+  errorMessage,
+  slugEnum,
+  snapshotPublishMarker,
+  stampMcpContext,
+  textResponse,
+  verifyPublishSucceededDespiteError,
+} from './_helpers'
 
 /**
  * Promote a draft-enabled global's pending draft to published. Mirrors
@@ -35,7 +42,20 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
 
       stampMcpContext(req)
 
+      // Capture pre-update marker so the recovery branch below can
+      // distinguish a publish that landed despite a post-write throw from
+      // a pre-existing published version inherited from an earlier
+      // successful publish.
+      const preMarker = await snapshotPublishMarker(req, {
+        kind: 'global',
+        slug,
+        ...(locale ? { locale } : {}),
+      })
+
       try {
+        // `slug as never` / `locale as never`: Payload's updateGlobal /
+        // findGlobal generic narrows the slug to a TConfig-derived literal
+        // union we cannot satisfy with a runtime-supplied string.
         await req.payload.updateGlobal({
           slug: slug as never,
           data: { _status: 'published' } as never,
@@ -46,6 +66,24 @@ export function createPublishGlobalDraftTool(draftGlobals: Set<string>) {
         })
         return textResponse(`Successfully published global "${slug}".`)
       } catch (err) {
+        // Mirror publishDraft's recovery (see publish-draft.ts for the
+        // longer note on the post-write validator throw). The shared
+        // helper enforces the strictly-newer `updatedAt` check, so a
+        // pre-existing published row from an earlier publish cannot mask
+        // a real failure of the current attempt.
+        const liveGlobal = await verifyPublishSucceededDespiteError(
+          req,
+          { kind: 'global', slug, ...(locale ? { locale } : {}) },
+          preMarker,
+        )
+        if (liveGlobal) {
+          return textResponse(
+            `[publishGlobalDraft:published_with_warning] ` +
+              `Published global "${slug}" — but Payload reported a post-write validation error: ` +
+              `${errorMessage(err)}. The global is live; the error did not roll back the ` +
+              `published version.`,
+          )
+        }
         return textResponse(`Error publishing global "${slug}": ${errorMessage(err)}`)
       }
     },

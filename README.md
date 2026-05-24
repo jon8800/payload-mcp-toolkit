@@ -60,10 +60,10 @@ Configure each key's permissions through typed admin fields — no JSON to hand-
 
 | Field | Effect |
 |---|---|
-| `preset` | Role preset: **Read-only**, **Editor** (read + create + update on collections; read-only on globals — see below), **Admin** (all actions on both), or **Custom** (use the override fields below). Required. Defaults to **Custom** so new keys deny everything until explicitly scoped. |
-| `collectionScopes` | Array of `{ collection, actions[] }`. Only honoured when preset is **Custom**. Each row whitelists a collection and the actions (`read` / `create` / `update` / `delete`) allowed on it. An empty `actions[]` denies all actions on that collection. Listed collections are a *whitelist* — collections not in the list are denied. |
-| `globalScopes` | Array of `{ global, actions[] }`. Only honoured when preset is **Custom** *and* the host config has at least one global. Globals only support `read` and `update` (no `create` / `delete` — they're singletons). Same whitelist semantics as `collectionScopes`. |
-| `toolAllow` | Multi-select. Only honoured when preset is **Custom**. If set, only these tools are callable with this key. **Note:** `toolAllow` without an explicit `collectionScopes` / `globalScopes` map or preset is treated as a deny — see [Globals](#globals). |
+| `preset` | Role preset: **Read-only**, **Editor** (read + create + update on collections; read-only on globals — see below), **Admin** (all actions on both), or **Custom** (use the override fields below). Required. Defaults to **Custom** so new keys deny everything until explicitly scoped. Switching away from Custom **clears every override field on save** (collectionScopes, globalScopes, toolAllow, toolDeny); switching back to Custom starts from a fresh deny-all baseline — reconfigure the matrices before saving. |
+| `collectionScopes` | Array of `{ slug, actions[] }`. Only honoured when preset is **Custom**. Each row whitelists a collection and the actions (`read` / `create` / `update` / `delete`) allowed on it. An empty `actions[]` denies all actions on that collection. Listed collections are a *whitelist* — collections not in the list are denied. (Pre-v0.6 rows using `{ collection, actions[] }` are tolerated via a one-release legacy fallback; resave them to migrate.) |
+| `globalScopes` | Array of `{ slug, actions[] }`. Only honoured when preset is **Custom** *and* the host config has at least one global. Globals only support `read` and `update` (no `create` / `delete` — they're singletons). Same whitelist semantics as `collectionScopes`. (Pre-v0.6 rows using `{ global, actions[] }` are tolerated via the same legacy fallback.) |
+| `toolAllow` | Multi-select. Only honoured when preset is **Custom**. If set, only these tools are callable with this key. An empty list under Custom is treated as deny-all on the tools axis **only when no collection or global scopes are set** (the fresh-Custom-key sentinel); when collection or global scopes are populated, an empty list collapses to "no tool restriction" so the resource scopes alone gate access. To deny every tool while keeping resource scopes, enumerate them in `toolDeny` instead. |
 | `toolDeny` | Multi-select. Always applied on top of any preset. Tools listed here are blocked regardless of preset / collection / global scopes. |
 
 The collection and tool dropdowns are populated at plugin-init time from your live Payload config + the toolkit's registered tools. Adding a collection or custom tool requires a dev-server / app restart for it to surface in the dropdowns.
@@ -88,9 +88,9 @@ The same shape is editable programmatically via Payload's REST and GraphQL APIs 
 - `blockCompositionGuide` — section/leaf hierarchy and nesting rules.
 - `draftWorkflowGuide` — which collections need `publishDraft` to go live.
 
-**Auto-generated resources:** `blocks://catalog`, `collections://schema`, `collections://relationships`.
+**Auto-generated resources:** `blocks://catalog`, `blocks://nesting`, `collections://schema`, `collections://relationships`. Plus `globals://schema` when the host config has at least one global.
 
-**Tools (13, plus an auto-registered scheduler):**
+**Tools (19 total — 10 collection-routed, 6 global-routed, 3 account-routed; globals tools register only when the host config has at least one global, and version / publish tools register only on draft-enabled resources):**
 
 *Authoring*
 - `createDocument` — local-API based creation for any collection. JSON-string `data`. Defaults to `draft: true` on draft-enabled collections.
@@ -104,7 +104,7 @@ The same shape is editable programmatically via Payload's REST and GraphQL APIs 
 - `searchContent` — natural-language editor triage (status, recency, missing fields, free text).
 
 *Lifecycle / safety*
-- `publishDraft` — flip `_status` from draft to published.
+- `publishDraft` — flip `_status` from draft to published. Recovers from Payload's post-write field-validator quirk (validator throws *after* the new version row commits in some draft+versions setups): on a caught error, the tool re-reads the doc with `draft: false` and only downgrades to a "published-with-warning" response when the live row reflects the current attempt (strictly newer `updatedAt`), so a stale prior publish cannot mask a real failure.
 - `schedulePublish` — auto-registered for collections with drafts AND a `publishedAt` date field. Stamps a future `publishedAt`; you wire up the actual flip via Payload Jobs Queue / cron / `beforeRead`.
 - `listVersions` — recent saved versions of a draft document.
 - `restoreVersion` — roll a document back to a saved version (creates a new version, so reversible).
@@ -115,7 +115,7 @@ The same shape is editable programmatically via Payload's REST and GraphQL APIs 
 - `findGlobal` — read any global by slug. Stamps a preview URL on draft documents when `admin.livePreview` / `admin.preview` is configured.
 - `updateGlobal` — partial-merge update; same prose JSON contract as `updateDocument`. Draft-enabled globals default to `'always-draft'`.
 - `patchGlobalLayout` — surgical block-array edits on any blocks-typed field inside a global, at any nesting depth (e.g. `footer.sections`). Registered only when at least one global has a blocks field.
-- `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` — registered only for globals with `versions: { drafts: true }`.
+- `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` — registered only for globals with `versions: { drafts: true }`. `publishGlobalDraft` uses the same post-write validation recovery as `publishDraft`, with `fallbackLocale: false` on the verify read so localized globals report the literal `_status` of the requested locale.
 
 ## Globals
 
@@ -172,6 +172,27 @@ mcpToolkitPlugin({
 | `domainPrompts` | Site-specific vocabulary prompts. |
 | `mediaUpload.maxFileSize` | Default 10MB. Enforced as a streaming cap, not a post-buffer check. |
 | `mediaUpload.collectionSlug` | Default `'media'`. |
+
+## Upgrading from 0.7.0
+
+v0.7.1 is a patch release; no API or breaking config changes. The behavioural changes worth knowing:
+
+- **Preset-switch clears overrides on save.** Switching an API key away from Custom now nulls `collectionScopes`, `globalScopes`, `toolAllow`, and `toolDeny` on save (admin UI conditional-field trap fix — previously, stale Custom-era values silently survived the switch and continued to narrow access). Switching back to Custom starts from a fresh deny-all baseline; reconfigure the matrices before saving.
+- **Empty `toolAllow` under Custom + populated resource scopes no longer denies all tools.** When the key carries collection or global scopes and `toolAllow` is empty, it is treated as "no tool restriction" so the resource scopes alone determine what is callable. The fresh-Custom-key sentinel (no scopes anywhere → deny-all) still applies.
+- **Legacy non-Custom rows with populated overrides emit a one-time warn.** Keys persisted before v0.7.1 that carry populated `collectionScopes` / `globalScopes` / `toolAllow` arrays under a non-Custom preset still narrow access as written (fail-closed safe), but `composeScopes` now logs `mcp.auth.legacy_non_custom_override` once per process to flag them for audit. Re-save affected keys in admin to align persisted state with the v0.7.1 semantics.
+- **Publish tools recover from Payload's post-write validator throw deterministically.** Both `publishDraft` and `publishGlobalDraft` snapshot the document's `updatedAt` before the update and only downgrade a caught error to a `[publishDraft:published_with_warning]` / `[publishGlobalDraft:published_with_warning]` response when the live row reflects the current attempt (strictly newer `updatedAt`). MCP clients can branch on the stable token prefix without regex-matching prose.
+
+## Upgrading from 0.6
+
+v0.7 renames the exported plugin factory so the public symbol matches the package name. Pure rename — no options, runtime behaviour, or scope semantics changed.
+
+```diff
+- import { contentToolkitPlugin } from 'payload-mcp-toolkit'
++ import { mcpToolkitPlugin } from 'payload-mcp-toolkit'
+
+- plugins: [contentToolkitPlugin()],
++ plugins: [mcpToolkitPlugin()],
+```
 
 ## Upgrading from 0.5
 

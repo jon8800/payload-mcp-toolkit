@@ -271,7 +271,7 @@ describe('createApiKeysCollection', () => {
     const collection = createApiKeysCollection(baseOptions)
     const hook = (collection.hooks?.beforeValidate ?? [])[0] as
       | undefined
-      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
     expect(hook).toBeDefined()
 
     const out = hook!({
@@ -281,11 +281,11 @@ describe('createApiKeysCollection', () => {
     expect(out.toolDeny).toBeNull()
   })
 
-  it('beforeValidate preserves explicit-empty toolAllow under the Custom preset (deny-all semantic)', () => {
+  it('beforeValidate preserves explicit-empty toolAllow under the Custom preset when no other scopes are set (fresh-Custom deny-all sentinel)', () => {
     const collection = createApiKeysCollection(baseOptions)
     const hook = (collection.hooks?.beforeValidate ?? [])[0] as
       | undefined
-      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
 
     const out = hook!({
       data: { preset: 'custom', toolAllow: [], toolDeny: [] },
@@ -294,16 +294,162 @@ describe('createApiKeysCollection', () => {
     expect(out.toolDeny).toEqual([])
   })
 
-  it('beforeValidate leaves populated tool arrays untouched', () => {
+  it('beforeValidate nulls empty toolAllow under Custom when collectionScopes carry entries (override label semantic)', () => {
     const collection = createApiKeysCollection(baseOptions)
     const hook = (collection.hooks?.beforeValidate ?? [])[0] as
       | undefined
-      | ((args: { data: unknown }) => Record<string, unknown> | undefined)
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
 
     const out = hook!({
-      data: { preset: 'admin', toolAllow: ['findDocument'], toolDeny: ['safeDelete'] },
+      data: {
+        preset: 'custom',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        toolAllow: [],
+        toolDeny: [],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+    expect(out.toolDeny).toEqual([])
+    expect(out.collectionScopes).toEqual([{ slug: 'pages', actions: ['read'] }])
+  })
+
+  it('beforeValidate nulls empty toolAllow under Custom when globalScopes carry entries', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: {
+        preset: 'custom',
+        globalScopes: [{ slug: 'header', actions: ['read'] }],
+        toolAllow: [],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+  })
+
+  it('beforeValidate preserves populated toolAllow under Custom (explicit whitelist still honoured)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: {
+        preset: 'custom',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        toolAllow: ['findDocument'],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toEqual(['findDocument'])
+  })
+
+  it('beforeValidate nulls populated tool/scope arrays under non-Custom presets (Custom→Admin switch fix)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: {
+        preset: 'admin',
+        toolAllow: ['findDocument'],
+        toolDeny: ['safeDelete'],
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        globalScopes: [{ slug: 'header', actions: ['read'] }],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+    expect(out.toolDeny).toBeNull()
+    expect(out.collectionScopes).toBeNull()
+    expect(out.globalScopes).toBeNull()
+  })
+
+  it('beforeValidate nulls stale override fields on originalDoc when admin-form `data` omits hidden fields (admin UI conditional-field trap)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: { preset: 'admin' },
+      originalDoc: {
+        preset: 'custom',
+        toolAllow: ['findDocument'],
+        toolDeny: ['safeDelete'],
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        globalScopes: [{ slug: 'header', actions: ['read'] }],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+    expect(out.toolDeny).toBeNull()
+    expect(out.collectionScopes).toBeNull()
+    expect(out.globalScopes).toBeNull()
+  })
+
+  it('beforeValidate preserves populated override arrays under the Custom preset', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: {
+        preset: 'custom',
+        toolAllow: ['findDocument'],
+        toolDeny: ['safeDelete'],
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        globalScopes: [{ slug: 'header', actions: ['read'] }],
+      },
     }) as Record<string, unknown>
     expect(out.toolAllow).toEqual(['findDocument'])
     expect(out.toolDeny).toEqual(['safeDelete'])
+    expect(out.collectionScopes).toEqual([{ slug: 'pages', actions: ['read'] }])
+    expect(out.globalScopes).toEqual([{ slug: 'header', actions: ['read'] }])
+  })
+
+  it('beforeValidate Custom→Admin→Custom round-trip: returning to Custom from an already-cleared row lands on the deny-all sentinel (documented in the preset field description)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    const out = hook!({
+      data: { preset: 'custom' },
+      originalDoc: {
+        preset: 'admin',
+        toolAllow: null,
+        toolDeny: null,
+        collectionScopes: null,
+        globalScopes: null,
+      },
+    }) as Record<string, unknown>
+    expect(out.preset).toBe('custom')
+    // No coercion fires: no concrete scopes anywhere → composeScopes
+    // fresh-Custom sentinel emits deny-all. This matches the preset
+    // field description warning that re-entering Custom starts fresh.
+    expect(out.toolAllow).toBeUndefined()
+    expect(out.collectionScopes).toBeUndefined()
+  })
+
+  it('beforeValidate honours originalDoc.collectionScopes when data omits the hidden Custom field (partial admin-form save)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    // Data omits collectionScopes entirely; originalDoc carries them.
+    // The Custom-branch effective-readers fall through to originalDoc, so
+    // hasCollectionEntries=true → empty toolAllow in data is coerced to
+    // null (override-label semantic preserved).
+    const out = hook!({
+      data: { preset: 'custom', toolAllow: [] },
+      originalDoc: {
+        preset: 'custom',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
   })
 })
