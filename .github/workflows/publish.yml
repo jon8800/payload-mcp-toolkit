@@ -20,20 +20,17 @@ jobs:
         with:
           version: 10
 
-      # Node 24+ is required for npm Trusted Publishing — Node 20/22 ship
-      # with npm 10.x which lacks the OIDC handshake protocols the registry
-      # requires. Node 24 LTS ships npm 11.x with full Trusted Publishing
-      # support. registry-url writes the .npmrc pointing at npmjs.org so
-      # `npm publish` knows where to send the OIDC exchange.
-      - uses: actions/setup-node@v4
+      # Node 24+ ships npm 11.x with the OIDC handshake support that
+      # Trusted Publishing requires. Intentionally omit `registry-url` —
+      # setting it writes `_authToken=${NODE_AUTH_TOKEN}` into .npmrc,
+      # which can shadow the OIDC exchange even when the env var is empty.
+      # The canonical Trusted Publishing setup (per remarkablemark.org and
+      # the npm docs working examples) is just `node-version: 24` with no
+      # registry-url override.
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
-
-      # Belt-and-braces: ensure npm CLI is at the latest 11.x even if Node
-      # 24 ships a slightly older bundled npm.
-      - run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -41,13 +38,10 @@ jobs:
 
       - run: pnpm build
 
-      # Authenticated via GitHub Actions OIDC (Trusted Publishing configured
-      # on the npm package). The explicit empty NODE_AUTH_TOKEN clears any
-      # default token actions/setup-node may have set in the environment —
-      # a stale token shadows the OIDC handshake (see github.com/orgs/
-      # community/discussions/176761). --provenance is required even though
-      # Trusted Publishing docs suggest auto-provenance, since the CLI takes
-      # a separate code path without the flag.
+      # Authenticated via GitHub Actions OIDC (Trusted Publishing). No
+      # NPM_TOKEN or NODE_AUTH_TOKEN — the `id-token: write` permission
+      # plus the trusted publisher config on the npm package side is the
+      # complete auth path. --provenance is required even though Trusted
+      # Publishing docs suggest auto-provenance, since the CLI takes a
+      # separate code path without the flag.
       - run: npm publish --access public --provenance --loglevel verbose
-        env:
-          NODE_AUTH_TOKEN: ""
