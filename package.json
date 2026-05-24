@@ -38,7 +38,11 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "files": [
-    "dist"
+    "dist",
+    "!dist/__tests__",
+    "!dist/**/*.test.js",
+    "!dist/**/*.test.js.map",
+    "!dist/**/*.test.d.ts"
   ],
   "sideEffects": false,
   "scripts": {
