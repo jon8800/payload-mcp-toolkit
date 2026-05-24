@@ -20,9 +20,10 @@ jobs:
         with:
           version: 10
 
-      # Node 24 ships npm 11.x with OIDC handshake support. Do NOT set
-      # `registry-url` — it writes `_authToken=${NODE_AUTH_TOKEN}` into
-      # .npmrc, which can shadow the OIDC exchange.
+      # Node 24 ships npm 11.x with Trusted Publishing OIDC support.
+      # Intentionally omit `registry-url` — that option writes
+      # `_authToken=${NODE_AUTH_TOKEN}` into .npmrc, which can shadow the
+      # OIDC exchange even when the env var is empty.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
@@ -37,21 +38,19 @@ jobs:
 
       - run: pnpm build
 
-      - name: Patch HttpErrorGeneral to dump response body
-        run: |
-          NPM_LIB=$(npm root -g)
-          TARGET="$NPM_LIB/npm/node_modules/npm-registry-fetch/lib/errors.js"
-          cat > /tmp/patch.js <<'PATCH_EOF'
-          const fs = require('fs')
-          const p = process.argv[2]
-          let s = fs.readFileSync(p, 'utf8')
-          const inject = `\n    try { const b = arguments[2]; const str = (b && b.type === 'Buffer') ? Buffer.from(b.data).toString('utf8') : JSON.stringify(b); require('fs').writeSync(2, '\\n[DUMP] ' + str.slice(0, 2000) + '\\n') } catch (e) {}`
-          s = s.replace(
-            /(class HttpErrorGeneral extends HttpErrorBase \{[\s\S]*?constructor \([^)]*\) \{)/,
-            '$1' + inject
-          )
-          fs.writeFileSync(p, s)
-          PATCH_EOF
-          node /tmp/patch.js "$TARGET"
-
+      # Authenticated via GitHub Actions OIDC (Trusted Publishing configured
+      # on the npm package side). No NPM_TOKEN, no NODE_AUTH_TOKEN — the
+      # `id-token: write` permission plus the trusted publisher on the npm
+      # package is the complete auth path.
+      #
+      # KNOWN ISSUE: npm registry is fronted by Cloudflare. Cloudflare's WAF
+      # has been observed blocking PUT /payload-mcp-toolkit from GitHub
+      # Actions runner IPs with an HTML "Sorry, you have been blocked"
+      # response (HTTP 403). The OIDC exchange itself (POST /-/npm/v1/oidc/
+      # token/exchange/...) passes through fine; only the actual publish
+      # PUT is rejected. When this happens, fall back to publishing
+      # locally from a developer machine — the trusted publisher config
+      # remains valid for future runs once Cloudflare clears the block.
+      # --ignore-scripts skips package.json's prepublishOnly (CI already
+      # ran build + test above).
       - run: npm publish --access public --provenance --ignore-scripts
