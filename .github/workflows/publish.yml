@@ -38,10 +38,17 @@ jobs:
 
       - run: pnpm build
 
-      # Authenticated via GitHub Actions OIDC (Trusted Publishing). No
-      # NPM_TOKEN or NODE_AUTH_TOKEN — the `id-token: write` permission
-      # plus the trusted publisher config on the npm package side is the
-      # complete auth path. --provenance is required even though Trusted
-      # Publishing docs suggest auto-provenance, since the CLI takes a
-      # separate code path without the flag.
+      - name: Print OIDC claim (temporary diagnostic)
+        run: |
+          echo "Requesting OIDC token with audience=npm..."
+          TOKEN=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm" | jq -r .value)
+          echo "Token received (len: ${#TOKEN})"
+          echo "--- Decoded payload ---"
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+          # Pad base64 if needed
+          MOD=$(( ${#PAYLOAD} % 4 ))
+          if [ $MOD -ne 0 ]; then PAYLOAD="${PAYLOAD}$(printf '=%.0s' $(seq 1 $((4-MOD))))"; fi
+          echo "$PAYLOAD" | tr '_-' '/+' | base64 -d 2>/dev/null | jq '{repository, ref, workflow, workflow_ref, job_workflow_ref, event_name, environment, sub}' || echo "decode failed"
+
       - run: npm publish --access public --provenance --loglevel verbose
