@@ -52,11 +52,13 @@ jobs:
           echo "::add-mask::$NPM_ID_TOKEN"
           echo "NPM_ID_TOKEN=$NPM_ID_TOKEN" >> "$GITHUB_ENV"
 
-      - name: Publish (provenance disabled to isolate attestation)
-        env:
-          NPM_CONFIG_PROVENANCE: "false"
-        run: npm publish --access public --ignore-scripts --loglevel verbose 2>&1 | tee /tmp/publish-output.log; exit ${PIPESTATUS[0]}
-        continue-on-error: true
+      # npm `stage publish` (released 2026-05-22 with npm CLI 11.15.0)
+      # submits the package to a staging area for maintainer approval.
+      # CI-automated publishes via Trusted Publishing must go through
+      # staging when the package's "Publishing access" is set to
+      # "Require 2FA and disallow tokens" (recommended). The maintainer
+      # then runs `npm stage approve <stage-id>` with 2FA to promote.
+      - run: npm stage publish --access public --ignore-scripts --loglevel verbose
 
       - name: Dump 403 response body
         if: always()
