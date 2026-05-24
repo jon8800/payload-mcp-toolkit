@@ -63,4 +63,4 @@ jobs:
       # the npm package). No NPM_TOKEN required; the `id-token: write`
       # permission at the workflow level exposes the OIDC claim that npm
       # verifies against the package's trusted publisher config.
-      - run: npm publish --access public --provenance
+      - run: npm publish --access public --provenance --loglevel verbose
