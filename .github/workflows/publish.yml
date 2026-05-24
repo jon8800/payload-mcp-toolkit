@@ -58,8 +58,37 @@ jobs:
       - name: Dump 403 response body
         if: always()
         run: |
-          echo "--- last 100 lines of publish output ---"
-          tail -100 /tmp/publish-output.log
-          echo "--- npm debug log ---"
-          ls -la /home/runner/.npm/_logs/ 2>&1
-          cat /home/runner/.npm/_logs/*.log 2>&1 | grep -iE "403|forbidden|provenance|attest|policy|reason|message" | tail -30 || echo "(no relevant lines)"
+          echo "--- npm debug log tail ---"
+          tail -50 /home/runner/.npm/_logs/*.log 2>&1 || echo "(no log)"
+
+      - name: Manual PUT to capture response body
+        if: always()
+        run: |
+          # Mirror npm CLI's flow: get GitHub OIDC token, exchange with
+          # npm for an npm publish token, then do a PUT with a minimal
+          # body so the registry rejects on auth/permission rather than
+          # on payload — but exposes the actual error reason in the body.
+          echo "--- Step 1: Request GitHub OIDC token ---"
+          ID_TOKEN=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" | jq -r .value)
+          echo "Got ID token (len ${#ID_TOKEN})"
+
+          echo "--- Step 2: Exchange for npm publish token ---"
+          EX_RESP=$(curl -sS -X POST \
+            -H "Authorization: Bearer $ID_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/payload-mcp-toolkit")
+          echo "Exchange response: $EX_RESP" | head -c 200
+          echo ""
+          NPM_TOK=$(echo "$EX_RESP" | jq -r .token 2>/dev/null)
+          echo "Got npm token (len ${#NPM_TOK})"
+
+          echo "--- Step 3: PUT a malformed body to surface auth/permission errors ---"
+          RESP=$(curl -sS -X PUT \
+            -H "Authorization: Bearer $NPM_TOK" \
+            -H "Content-Type: application/json" \
+            --data '{"name":"payload-mcp-toolkit","version":"0.7.1-probe"}' \
+            -w "\n---HTTP_STATUS:%{http_code}---\n" \
+            "https://registry.npmjs.org/payload-mcp-toolkit")
+          echo "$RESP"
