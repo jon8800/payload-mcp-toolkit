@@ -26,25 +26,18 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      # npm Trusted Publishing requires npm CLI >= 11.5.0; setup-node@v4 with
+      # Node 20 ships npm 10.x by default, so upgrade explicitly.
+      - run: npm install -g npm@latest
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm test
 
       - run: pnpm build
 
-      - name: Diagnose npm auth (temporary)
-        run: |
-          echo "Token length: ${#NODE_AUTH_TOKEN}"
-          echo "Token first 6 chars: ${NODE_AUTH_TOKEN:0:6}"
-          echo "--- npm whoami ---"
-          npm whoami || echo "whoami failed"
-          echo "--- npm access ls-packages ---"
-          npm access list packages 2>&1 | head -20 || echo "access ls failed"
-          echo "--- npm view payload-mcp-toolkit (anon) ---"
-          npm view payload-mcp-toolkit --json | head -20 || true
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - run: pnpm publish --access public --no-git-checks --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Authenticated via GitHub Actions OIDC (Trusted Publishing configured on
+      # the npm package). No NPM_TOKEN required; the `id-token: write`
+      # permission at the workflow level exposes the OIDC claim that npm
+      # verifies against the package's trusted publisher config.
+      - run: npm publish --access public --provenance
