@@ -56,9 +56,42 @@ jobs:
           echo "::add-mask::$NPM_ID_TOKEN"
           echo "NPM_ID_TOKEN=$NPM_ID_TOKEN" >> "$GITHUB_ENV"
 
-      # Try plain publish first; fall back to stage if the package policy
-      # forces staged publishing. Verbose log shows which path landed.
-      - run: npm publish --access public --ignore-scripts --tag test --loglevel verbose
+      # Patch npm-registry-fetch's check-response.js so the actual
+      # registry response body for any non-2xx is printed before npm CLI
+      # swallows it. This is the only reliable way to surface the
+      # registry's real error reason for a 403 on publish.
+      - name: Patch check-response.js to expose error body
+        run: |
+          NPM_LIB=$(npm root -g)
+          TARGET="$NPM_LIB/npm/node_modules/npm-registry-fetch/lib/check-response.js"
+          ls -la "$TARGET"
+          # Insert a console.error dump of the body right before the throw.
+          node -e "
+            const fs = require('fs');
+            const p = '$TARGET';
+            let s = fs.readFileSync(p, 'utf8');
+            const marker = 'throw new HttpErrorGeneral';
+            if (!s.includes('REGISTRY-BODY-DUMP')) {
+              s = s.replace(marker, 'console.error(\"REGISTRY-BODY-DUMP\", res.status, JSON.stringify(body)); ' + marker);
+              fs.writeFileSync(p, s);
+              console.log('patched');
+            } else {
+              console.log('already patched');
+            }
+          "
+          echo '--- patched file head ---'
+          head -60 "$TARGET"
+
+      - run: npm publish --access public --ignore-scripts --loglevel verbose 2>&1 | tee /tmp/publish-output.log; exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      - name: Show dumped registry body
+        if: always()
+        run: |
+          echo '--- REGISTRY-BODY-DUMP lines ---'
+          grep -A2 'REGISTRY-BODY-DUMP' /tmp/publish-output.log || echo '(no dump found in tee output)'
+          echo '--- npm debug log dump ---'
+          grep -A2 'REGISTRY-BODY-DUMP' /home/runner/.npm/_logs/*.log 2>&1 || echo '(no dump in debug log)'
 
       - name: Dump 403 response body
         if: always()
