@@ -60,27 +60,26 @@ jobs:
       # registry response body for any non-2xx is printed before npm CLI
       # swallows it. This is the only reliable way to surface the
       # registry's real error reason for a 403 on publish.
-      - name: Patch errors.js to expose error body in HttpErrorGeneral
+      - name: Patch errors.js to expose error body
         run: |
           NPM_LIB=$(npm root -g)
           TARGET="$NPM_LIB/npm/node_modules/npm-registry-fetch/lib/errors.js"
           echo "--- ORIGINAL ---"
           cat "$TARGET"
-          # The HttpErrorGeneral constructor receives the response body. Add
-          # a process.stderr.write so we dump it before the error propagates.
-          node -e "
-            const fs = require('fs');
-            const p = '$TARGET';
-            let s = fs.readFileSync(p, 'utf8');
-            // Insert a body dump at the very start of HttpErrorGeneral constructor.
-            s = s.replace(
-              /class HttpErrorGeneral extends HttpErrorBase \{[\s\S]*?constructor \([^)]*\) \{/,
-              m => m + '\n    try { require(\"fs\").writeSync(2, \"\\n[REGISTRY-BODY-DUMP] status=\" + (arguments[1] && arguments[1].status) + \" body=\" + JSON.stringify(arguments[2]) + \"\\n\"); } catch(e) {}'
-            );
-            fs.writeFileSync(p, s);
-            console.log('PATCHED');
-          "
-          echo "--- PATCHED ---"
+          cat > /tmp/patch.js <<'PATCH_EOF'
+          const fs = require('fs')
+          const p = process.argv[2]
+          let s = fs.readFileSync(p, 'utf8')
+          const inject = `\n    try { require('fs').writeSync(2, '\\n[REGISTRY-BODY-DUMP] status=' + (arguments[1] && arguments[1].status) + ' body=' + JSON.stringify(arguments[2]) + '\\n') } catch (e) {}`
+          s = s.replace(
+            /(class HttpErrorGeneral extends HttpErrorBase \{[\s\S]*?constructor \([^)]*\) \{)/,
+            '$1' + inject
+          )
+          fs.writeFileSync(p, s)
+          console.log('PATCHED')
+          PATCH_EOF
+          node /tmp/patch.js "$TARGET"
+          echo "--- PATCHED FILE ---"
           cat "$TARGET"
 
       - run: npm publish --access public --ignore-scripts --loglevel verbose 2>&1 | tee /tmp/publish-output.log; exit ${PIPESTATUS[0]}
