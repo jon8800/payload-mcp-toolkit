@@ -20,11 +20,14 @@ jobs:
         with:
           version: 10
 
+      # Intentionally NOT setting `registry-url` — that option writes
+      # `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` into .npmrc,
+      # which shadows OIDC auth when no token is set. Trusted Publishing
+      # requires a clean .npmrc so the CLI falls through to OIDC.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       # npm Trusted Publishing requires npm CLI >= 11.5.0; setup-node@v4 with
       # Node 20 ships npm 10.x by default, so upgrade explicitly.
