@@ -20,21 +20,16 @@ jobs:
         with:
           version: 10
 
-      # Node 24+ ships npm 11.x with the OIDC handshake support that
-      # Trusted Publishing requires. Intentionally omit `registry-url` —
-      # setting it writes `_authToken=${NODE_AUTH_TOKEN}` into .npmrc,
-      # which can shadow the OIDC exchange even when the env var is empty.
-      # The canonical Trusted Publishing setup (per remarkablemark.org and
-      # the npm docs working examples) is just `node-version: 24` with no
-      # registry-url override.
+      # Node 24 ships npm 11.x with OIDC handshake support. Do NOT set
+      # `registry-url` — it writes `_authToken=${NODE_AUTH_TOKEN}` into
+      # .npmrc, which can shadow the OIDC exchange.
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           cache: 'pnpm'
 
-      # `npm stage publish` requires npm CLI >= 11.15.0; Node 24 bundles
-      # 11.12.1, so upgrade explicitly.
-      - run: npm install -g npm@latest && npm --version
+      # Ensure npm CLI is >= 11.15.0 for Trusted Publishing OIDC exchange.
+      - run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -42,91 +37,8 @@ jobs:
 
       - run: pnpm build
 
-      # Bridge GitHub Actions OIDC to npm's expected env var. The npm CLI
-      # does NOT auto-discover ACTIONS_ID_TOKEN_REQUEST_* — it reads
-      # NPM_ID_TOKEN (a convention shared with GitLab CI). Request a token
-      # with audience `npm:registry.npmjs.org` which npm exchanges for a
-      # short-lived publish credential.
-      - name: Request npm OIDC token
-        run: |
-          NPM_ID_TOKEN=$(curl -sSf \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
-            | jq -r .value)
-          echo "::add-mask::$NPM_ID_TOKEN"
-          echo "NPM_ID_TOKEN=$NPM_ID_TOKEN" >> "$GITHUB_ENV"
-
-      # Patch npm-registry-fetch's check-response.js so the actual
-      # registry response body for any non-2xx is printed before npm CLI
-      # swallows it. This is the only reliable way to surface the
-      # registry's real error reason for a 403 on publish.
-      - name: Patch errors.js to expose error body
-        run: |
-          NPM_LIB=$(npm root -g)
-          TARGET="$NPM_LIB/npm/node_modules/npm-registry-fetch/lib/errors.js"
-          echo "--- ORIGINAL ---"
-          cat "$TARGET"
-          cat > /tmp/patch.js <<'PATCH_EOF'
-          const fs = require('fs')
-          const p = process.argv[2]
-          let s = fs.readFileSync(p, 'utf8')
-          const inject = `\n    try { require('fs').writeSync(2, '\\n[REGISTRY-BODY-DUMP] status=' + (arguments[1] && arguments[1].status) + ' body=' + JSON.stringify(arguments[2]) + '\\n') } catch (e) {}`
-          s = s.replace(
-            /(class HttpErrorGeneral extends HttpErrorBase \{[\s\S]*?constructor \([^)]*\) \{)/,
-            '$1' + inject
-          )
-          fs.writeFileSync(p, s)
-          console.log('PATCHED')
-          PATCH_EOF
-          node /tmp/patch.js "$TARGET"
-          echo "--- PATCHED FILE ---"
-          cat "$TARGET"
-
-      - run: npm publish --access public --ignore-scripts --loglevel verbose 2>&1 | tee /tmp/publish-output.log; exit ${PIPESTATUS[0]}
-        continue-on-error: true
-
-      - name: Show dumped registry body
-        if: always()
-        run: |
-          echo '--- REGISTRY-BODY-DUMP lines ---'
-          grep -A2 'REGISTRY-BODY-DUMP' /tmp/publish-output.log || echo '(no dump found in tee output)'
-          echo '--- npm debug log dump ---'
-          grep -A2 'REGISTRY-BODY-DUMP' /home/runner/.npm/_logs/*.log 2>&1 || echo '(no dump in debug log)'
-
-      - name: Dump 403 response body
-        if: always()
-        run: |
-          echo "--- npm debug log tail ---"
-          tail -50 /home/runner/.npm/_logs/*.log 2>&1 || echo "(no log)"
-
-      - name: Manual PUT to capture response body
-        if: always()
-        run: |
-          # Mirror npm CLI's flow: get GitHub OIDC token, exchange with
-          # npm for an npm publish token, then do a PUT with a minimal
-          # body so the registry rejects on auth/permission rather than
-          # on payload — but exposes the actual error reason in the body.
-          echo "--- Step 1: Request GitHub OIDC token ---"
-          ID_TOKEN=$(curl -sSf -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" | jq -r .value)
-          echo "Got ID token (len ${#ID_TOKEN})"
-
-          echo "--- Step 2: Exchange for npm publish token ---"
-          EX_RESP=$(curl -sS -X POST \
-            -H "Authorization: Bearer $ID_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data '{}' \
-            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/payload-mcp-toolkit")
-          echo "Exchange response: $EX_RESP" | head -c 200
-          echo ""
-          NPM_TOK=$(echo "$EX_RESP" | jq -r .token 2>/dev/null)
-          echo "Got npm token (len ${#NPM_TOK})"
-
-          echo "--- Step 3: PUT a malformed body to surface auth/permission errors ---"
-          RESP=$(curl -sS -X PUT \
-            -H "Authorization: Bearer $NPM_TOK" \
-            -H "Content-Type: application/json" \
-            --data '{"name":"payload-mcp-toolkit","version":"0.7.1-probe"}' \
-            -w "\n---HTTP_STATUS:%{http_code}---\n" \
-            "https://registry.npmjs.org/payload-mcp-toolkit")
-          echo "$RESP"
+      # Authenticated via GitHub Actions OIDC (Trusted Publishing on the
+      # npm package). `--ignore-scripts` skips the package.json
+      # prepublishOnly hook (which re-runs build/test via pnpm) since CI
+      # already did both above.
+      - run: npm publish --access public --provenance --ignore-scripts
