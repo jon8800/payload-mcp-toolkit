@@ -37,8 +37,21 @@ jobs:
 
       - run: pnpm build
 
-      # Authenticated via GitHub Actions OIDC (Trusted Publishing on the
-      # npm package). `--ignore-scripts` skips the package.json
-      # prepublishOnly hook (which re-runs build/test via pnpm) since CI
-      # already did both above.
+      - name: Patch HttpErrorGeneral to dump response body
+        run: |
+          NPM_LIB=$(npm root -g)
+          TARGET="$NPM_LIB/npm/node_modules/npm-registry-fetch/lib/errors.js"
+          cat > /tmp/patch.js <<'PATCH_EOF'
+          const fs = require('fs')
+          const p = process.argv[2]
+          let s = fs.readFileSync(p, 'utf8')
+          const inject = `\n    try { const b = arguments[2]; const str = (b && b.type === 'Buffer') ? Buffer.from(b.data).toString('utf8') : JSON.stringify(b); require('fs').writeSync(2, '\\n[DUMP] ' + str.slice(0, 2000) + '\\n') } catch (e) {}`
+          s = s.replace(
+            /(class HttpErrorGeneral extends HttpErrorBase \{[\s\S]*?constructor \([^)]*\) \{)/,
+            '$1' + inject
+          )
+          fs.writeFileSync(p, s)
+          PATCH_EOF
+          node /tmp/patch.js "$TARGET"
+
       - run: npm publish --access public --provenance --ignore-scripts
