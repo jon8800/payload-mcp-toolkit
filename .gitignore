@@ -52,3 +52,6 @@ dev.db
 dev.db-journal
 .tmp/
 dev-server.log
+
+# transient backup written by scripts/prepack.mjs during npm pack
+package.json.prepack-bak

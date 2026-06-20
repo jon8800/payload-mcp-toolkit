@@ -18,32 +18,31 @@ if (!token) {
   process.exit(1)
 }
 
-const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
-const { name, version } = pkg
+const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'))
 
 console.log(`Building ${name}@${version}…`)
 execSync('pnpm build', { stdio: 'inherit' })
 
-// npm pack prints the tarball filename on its last stdout line.
+// npm pack runs prepack/postpack, which rewrite the tarball's package.json
+// entry points from src/ to dist/. The last stdout line is the tarball name.
 const tgz = execSync('npm pack --silent', { encoding: 'utf8' }).trim().split('\n').pop()
 const buf = readFileSync(tgz)
-const integrity = 'sha512-' + createHash('sha512').update(buf).digest('base64')
-const shasum = createHash('sha1').update(buf).digest('hex')
 
-// Apply publishConfig (rewrites main/types/exports from src → dist) exactly as
-// `npm publish` would, then drop it from the published manifest.
-const manifest = {
-  ...pkg,
-  ...pkg.publishConfig,
-  _id: `${name}@${version}`,
-  dist: { integrity, shasum, tarball: `https://registry.npmjs.org/${name}/-/${tgz}` },
-}
-delete manifest.publishConfig
+// Derive the published manifest from the *actual* tarball package.json, so the
+// registry metadata can never drift from what a consumer installs.
+const manifest = JSON.parse(execSync(`tar -xzO -f ${tgz} package/package.json`, { encoding: 'utf8' }))
 
-// Guard: the published entry points must resolve to shipped files (dist/), not src/.
-if (JSON.stringify({ m: manifest.main, e: manifest.exports }).includes('/src/')) {
-  console.error('Refusing to publish: manifest still points at src/. Check publishConfig.')
+// Guard: entry points must resolve to shipped files (dist/), never src/.
+if ((String(manifest.main) + JSON.stringify(manifest.exports ?? '')).includes('/src/')) {
+  console.error('Refusing to publish: tarball package.json still points at src/. Check prepack/publishConfig.')
   process.exit(1)
+}
+
+manifest._id = `${name}@${version}`
+manifest.dist = {
+  integrity: 'sha512-' + createHash('sha512').update(buf).digest('base64'),
+  shasum: createHash('sha1').update(buf).digest('hex'),
+  tarball: `https://registry.npmjs.org/${name}/-/${tgz}`,
 }
 
 const body = {
