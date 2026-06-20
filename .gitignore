@@ -55,3 +55,6 @@ dev-server.log
 
 # transient backup written by scripts/prepack.mjs during npm pack
 package.json.prepack-bak
+
+# npm pack artifacts (scripts/publish.mjs)
+*.tgz
