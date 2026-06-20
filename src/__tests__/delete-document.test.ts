@@ -28,7 +28,7 @@ describe('deleteDocument', () => {
     const req = buildReq()
     req.payload.delete.mockResolvedValue({ id: 'a', name: 'Hello' })
 
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     expect(req.payload.delete).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: 'posts',
@@ -44,14 +44,14 @@ describe('deleteDocument', () => {
     const req = buildReq()
     req.payload.delete.mockRejectedValue(new Error('not found'))
 
-    const result = await tool.handler({ collection: 'posts', id: 'missing' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'missing' }, req as never, {})
     expect(result.content[0]!.text).toMatch(/Error deleting missing from posts/)
   })
 
   it('rejects unknown collections at the boundary', async () => {
     const tool = createDeleteDocumentTool(schemas)
     const req = buildReq()
-    const result = await tool.handler({ collection: 'unknown', id: 'x' }, req as never, {})
+    const result = await tool.handler({ collection: 'unknown', documentId: 'x' }, req as never, {})
     expect(result.content[0]!.text).toMatch(/Unknown collection/)
     expect(req.payload.delete).not.toHaveBeenCalled()
   })

@@ -114,6 +114,15 @@ export function createCreateDocumentTool(
       const isDraftCollection = draftCollections.has(collection)
       const asDraft = draft ?? isDraftCollection
 
+      // Payload's `draft: false` writes a published version but leaves the main
+      // row's `_status` at its field default ('draft'), so the admin list shows
+      // "draft" even though routes serve the published doc. Set `_status`
+      // explicitly to match intent (mirrors publishDraft); respect a caller
+      // value if one was passed in `data`.
+      if (isDraftCollection && data._status === undefined) {
+        data._status = asDraft ? 'draft' : 'published'
+      }
+
       try {
         const doc = await req.payload.create({
           collection: collection as any,

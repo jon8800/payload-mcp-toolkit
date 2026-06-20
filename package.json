@@ -1,6 +1,6 @@
 {
   "name": "payload-mcp-toolkit",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Standalone schema-aware MCP plugin for Payload CMS v3 — owns the /api/mcp endpoint, scoped API keys, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.",
   "license": "MIT",
   "author": "jon8800",

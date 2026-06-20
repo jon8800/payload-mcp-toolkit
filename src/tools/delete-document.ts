@@ -10,7 +10,7 @@ import {
 
 interface DeleteDocumentArgs {
   collection: string
-  id: string
+  documentId: string
 }
 
 /**
@@ -33,10 +33,10 @@ export function createDeleteDocumentTool(collectionSchemas: Map<string, Collecti
       `Collections: ${deletableSlugs.join(', ')}`,
     parameters: {
       collection: z.string().describe(`Collection slug. One of: ${deletableSlugs.join(', ')}`),
-      id: z.string().describe('Document ID to delete.'),
+      documentId: z.string().describe('Document ID to delete.'),
     },
     handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
-      const { collection, id } = args as unknown as DeleteDocumentArgs
+      const { collection, documentId } = args as unknown as DeleteDocumentArgs
 
       if (!collectionSchemas.has(collection)) {
         return textResponse(
@@ -49,19 +49,19 @@ export function createDeleteDocumentTool(collectionSchemas: Map<string, Collecti
       try {
         const doc = await req.payload.delete({
           collection: collection as never,
-          id,
+          id: documentId,
           req,
           overrideAccess: false,
           user: req.user,
         })
 
-        const displayName = getDocDisplayName(doc, id)
+        const displayName = getDocDisplayName(doc, documentId)
         return textResponse(
-          `Deleted "${displayName}" from ${collection} (ID: ${id}).`,
+          `Deleted "${displayName}" from ${collection} (ID: ${documentId}).`,
         )
       } catch (err) {
         return textResponse(
-          `Error deleting ${id} from ${collection}: ${errorMessage(err)}`,
+          `Error deleting ${documentId} from ${collection}: ${errorMessage(err)}`,
         )
       }
     },

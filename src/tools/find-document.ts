@@ -11,7 +11,7 @@ import {
 
 interface FindDocumentArgs {
   collection: string
-  id?: string
+  documentId?: string
   where?: string
   limit?: number
   depth?: number
@@ -25,8 +25,8 @@ interface FindDocumentArgs {
  * `createDocument` / `updateDocument`.
  *
  * Two modes:
- *   - `id` set:  `payload.findByID` (single doc)
- *   - `id` unset: `payload.find` with optional JSON-string `where`
+ *   - `documentId` set:   `payload.findByID` (single doc)
+ *   - `documentId` unset: `payload.find` with optional JSON-string `where`
  *
  * Draft-enabled collections get preview URLs appended to draft documents
  * via `decorateDraftResponse`.
@@ -48,7 +48,7 @@ export function createFindDocumentTool(
     name: 'findDocument',
     routing: { kind: 'collection', action: 'read' } as const,
     description:
-      'Read documents from any collection. Pass `id` for a single document, or omit `id` and pass a Payload `where` filter as a JSON string for a list. ' +
+      'Read documents from any collection. Pass `documentId` for a single document, or omit `documentId` and pass a Payload `where` filter as a JSON string for a list. ' +
       'Draft-enabled collections include a preview URL on draft documents when available.\n\n' +
       'Available collections:\n' +
       descriptionLines.join('\n'),
@@ -56,13 +56,16 @@ export function createFindDocumentTool(
       collection: z
         .string()
         .describe(`The collection slug. One of: ${findableSlugs.join(', ')}`),
-      id: z.string().optional().describe('Document ID. When set, returns a single document.'),
+      documentId: z
+        .string()
+        .optional()
+        .describe('Document ID. When set, returns a single document.'),
       where: z
         .string()
         .optional()
         .describe(
           'JSON-encoded Payload `where` clause. Examples: \'{"status":{"equals":"published"}}\', ' +
-            '\'{"slug":{"equals":"hello-world"}}\'. Ignored if `id` is set.',
+            '\'{"slug":{"equals":"hello-world"}}\'. Ignored if `documentId` is set.',
         ),
       limit: z
         .number()
@@ -91,7 +94,7 @@ export function createFindDocumentTool(
       _extra: unknown,
     ) => {
       const args = rawArgs as unknown as FindDocumentArgs
-      const { collection, id, where, limit, depth, draft } = args
+      const { collection, documentId, where, limit, depth, draft } = args
 
       if (!collectionSchemas.has(collection)) {
         return textResponse(
@@ -103,10 +106,10 @@ export function createFindDocumentTool(
       const collectionConfig = collectionsBySlug.get(collection)
 
       try {
-        if (id) {
+        if (documentId) {
           const doc = await req.payload.findByID({
             collection: collection as never,
-            id,
+            id: documentId,
             depth: depth ?? 1,
             draft: draft ?? false,
             req,

@@ -99,7 +99,7 @@ The same shape is editable programmatically via Payload's REST and GraphQL APIs 
 - `uploadMedia` — fetch a public HTTPS image, validate (SSRF-safe with a streaming size cap), create a Media doc.
 
 *Discovery*
-- `findDocument` — read documents by `id` or `where` filter, polymorphic across collections. Decorates draft responses with preview URLs when configured.
+- `findDocument` — read documents by `documentId` or `where` filter, polymorphic across collections. Decorates draft responses with preview URLs when configured.
 - `resolveReference` — search collections by name/title/slug for relationship IDs.
 - `searchContent` — natural-language editor triage (status, recency, missing fields, free text).
 

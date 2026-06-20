@@ -44,7 +44,7 @@ describe('findDocument', () => {
     const req = buildReq()
     req.payload.findByID.mockResolvedValue({ id: 'a', _status: 'published' })
 
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     expect(req.payload.findByID).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: 'posts',
@@ -100,7 +100,7 @@ describe('findDocument', () => {
     const req = buildReq()
     req.payload.findByID.mockResolvedValue({ id: 'a', slug: 'hello', _status: 'draft' })
 
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     const allText = result.content.map((c) => c.text).join('\n')
     expect(allText).toMatch(/draft/i)
     expect(allText).toContain('https://app.example.com/preview/posts/hello')
@@ -117,7 +117,7 @@ describe('findDocument', () => {
     const req = buildReq()
     req.payload.findByID.mockResolvedValue({ id: 'a', _status: 'draft' })
 
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     const allText = result.content.map((c) => c.text).join('\n')
     expect(allText).toMatch(/admin panel/i)
   })
@@ -132,7 +132,7 @@ describe('findDocument', () => {
     )
     const req = buildReq()
     req.payload.findByID.mockResolvedValue({ id: 'a', slug: 'hello', _status: 'draft' })
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     expect(result.content).toHaveLength(1)
     const decoration = result.content.slice(1)
     expect(decoration).toHaveLength(0)
@@ -142,7 +142,7 @@ describe('findDocument', () => {
     const tool = createFindDocumentTool(schemas, drafts, configs, undefined)
     const req = buildReq()
     req.payload.findByID.mockRejectedValue(new Error('not found'))
-    const result = await tool.handler({ collection: 'posts', id: 'a' }, req as never, {})
+    const result = await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
     expect(result.content[0]!.text).toMatch(/Error reading from posts/)
   })
 })
