@@ -17,7 +17,11 @@ import {
   createInitializeServer,
   type ToolFactoryOutput,
 } from './registry'
-import { assertNoSlugConflict, assertNoUpstreamPlugin } from './conflict-detection'
+import {
+  assertNoSlugConflict,
+  assertNoToolNameConflict,
+  assertNoUpstreamPlugin,
+} from './conflict-detection'
 import { createCreateDocumentTool } from './tools/create-document'
 import { createDeleteDocumentTool } from './tools/delete-document'
 import { createFindDocumentTool } from './tools/find-document'
@@ -223,6 +227,11 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
       if (restoreGlobalVersion) tools.push(restoreGlobalVersion)
     }
 
+    // Host-supplied tools go on the end, so a built-in never loses its slot in
+    // tools/list. They share the wrapper: scope check, mcp stamp, audit log.
+    assertNoToolNameConflict(tools, options.customTools)
+    if (options.customTools?.length) tools.push(...options.customTools)
+
     // Build the per-request initializer that mcp-handler invokes.
     const buildInitializeServer = createInitializeServer({
       tools,
@@ -286,6 +295,18 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
     }
   }
 }
+
+// Runtime helpers for building custom tools — the same envelope builders the
+// built-in tools use, so a host tool returns the identical result shape.
+export { jsonResponse, textResponse } from './tools/_helpers'
+
+export type {
+  ToolFactoryOutput,
+  PromptFactoryOutput,
+  ResourceFactoryOutput,
+} from './registry'
+export type { ToolRouting, ResourceKind } from './scope/policy'
+export type { McpTextResponse } from './tools/_helpers'
 
 export type {
   ContentToolkitOptions,

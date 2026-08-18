@@ -12,7 +12,7 @@ It is the standalone successor to the toolkit's earlier wrapper around `@payload
 pnpm add payload-mcp-toolkit
 ```
 
-Peer dependencies: `payload` ^3, `zod` ^3.
+Peer dependencies: `payload` ^3, `zod` ^3.25 or ^4.
 
 ## Configure — zero config
 
@@ -172,6 +172,65 @@ mcpToolkitPlugin({
 | `domainPrompts` | Site-specific vocabulary prompts. |
 | `mediaUpload.maxFileSize` | Default 10MB. Enforced as a streaming cap, not a post-buffer check. |
 | `mediaUpload.collectionSlug` | Default `'media'`. |
+| `customTools` | Extra tools registered alongside the built-ins. See [Custom tools](#custom-tools). |
+
+## Custom tools
+
+Pass your own tools through `customTools` and they register next to the built-in
+ones:
+
+```ts
+import { mcpToolkitPlugin, jsonResponse, type ToolFactoryOutput } from 'payload-mcp-toolkit'
+import { z } from 'zod'
+
+const countActiveMembers: ToolFactoryOutput = {
+  name: 'countActiveMembers',
+  description: 'Number of members with an active membership.',
+  parameters: { since: z.string().optional().describe('ISO date.') },
+  routing: { kind: 'collection', action: 'read' },
+  handler: async (args, req) => {
+    const { totalDocs } = await req.payload.count({
+      collection: 'memberships',
+      user: req.user,
+      overrideAccess: false,
+    })
+    return jsonResponse({ totalDocs })
+  },
+}
+
+plugins: [mcpToolkitPlugin({ customTools: [countActiveMembers] })]
+```
+
+What you get for free:
+
+- **The same wrapper as the built-ins** — the scope check runs before your
+  handler, `req.context.source` is stamped `'mcp'`, and every call (success,
+  failure, scope rejection) lands in the structured audit log.
+- **A slot in the API-key scope dropdowns** — your tool name appears in
+  **Tool allow** / **Tool deny** alongside the built-ins.
+- **A boot-time name check** — reusing a built-in name throws instead of
+  silently shadowing that tool.
+
+The field-by-field contract:
+
+| Field | Notes |
+|---|---|
+| `name` | Must be unique across built-in and custom tools. |
+| `description` | Shown to the model in `tools/list`. Say when to reach for it. |
+| `parameters` | A raw Zod shape (`{ key: z.string() }`) or a `z.object({...})`. Both are accepted. |
+| `routing` | `{kind, action}` — which scope axis gates the tool. `kind` is `'collection'`, `'global'`, or `'account'`. |
+| `handler` | `(args, req, extra) => McpTextResponse`. Read `req.payload` / `req.user` per call; do not close over them at boot. |
+
+Scope routing reads the target resource from the call's own arguments: a
+`collection`-routed tool should take a `collection` (or `slug`) argument, and
+the registry uses its value to decide whether the key's scopes permit the call.
+A `collection`-routed tool with no such argument is denied for any key that
+carries collection scopes — use `routing.kind: 'account'` for tools that span
+the whole install.
+
+Run queries as the authenticated user (`user: req.user, overrideAccess: false`)
+so Payload's own access rules still apply inside the tool. `overrideAccess:
+true` hands an MCP client more reach than the user behind its API key.
 
 ## Upgrading from 0.7.0
 

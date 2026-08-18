@@ -231,8 +231,6 @@ export function createApiKeysCollection(
             key in d ? d[key] : orig[key]
           const isNonEmptyArray = (v: unknown): boolean =>
             Array.isArray(v) && v.length > 0
-          const isEmptyArray = (v: unknown): boolean =>
-            Array.isArray(v) && v.length === 0
 
           const OVERRIDE_AXES = [
             'collectionScopes',
@@ -255,16 +253,20 @@ export function createApiKeysCollection(
           // store `toolAllow:[]`, which `composeScopes` honours as deny-all on
           // the tools axis and rejects every call.
           //
-          // Resolve the mismatch by coercing an empty `toolAllow` to null
-          // whenever the key carries any concrete resource scope (collection
-          // or global entries). The fresh-Custom-key sentinel in
-          // `composeScopes` still covers the "no scopes at all" case
-          // (everything null → deny-all), so users who genuinely want
-          // deny-all do not regress.
+          // Resolve the mismatch by coercing a non-populated `toolAllow` to
+          // null whenever the key carries any concrete resource scope
+          // (collection or global entries). "Non-populated" covers both `[]`
+          // (what the admin form sends) and a missing key (what a key created
+          // through the Local API sends) — Payload reads an unset hasMany
+          // select back as `[]` either way, so without this a scripted key
+          // with collection scopes and no tool list would deny every tool.
+          // The fresh-Custom-key sentinel in `composeScopes` still covers the
+          // "no scopes at all" case (everything null → deny-all), so users who
+          // genuinely want deny-all do not regress.
           const hasResourceScope =
             isNonEmptyArray(readField('collectionScopes')) ||
             isNonEmptyArray(readField('globalScopes'))
-          if (hasResourceScope && isEmptyArray(readField('toolAllow'))) {
+          if (hasResourceScope && !isNonEmptyArray(readField('toolAllow'))) {
             d.toolAllow = null
           }
           return data

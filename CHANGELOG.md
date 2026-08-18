@@ -4,6 +4,54 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-08-19
+
+### Added
+- **`customTools` option.** Host apps can register their own MCP tools next to
+  the built-in ones:
+  ```ts
+  mcpToolkitPlugin({ customTools: [myTool] })
+  ```
+  Each entry is a `ToolFactoryOutput` — `{name, description, parameters,
+  routing, handler}`. Custom tools go through the same per-request wrapper as
+  the built-ins, so scope checks, the `req.context.source = 'mcp'` stamp, and
+  the audit log all apply, and their names appear in the API-key scope
+  dropdowns. The handler receives the live `PayloadRequest`, so a tool reads
+  `req.payload` / `req.user` per call instead of closing over them at boot.
+- **Public types and helpers for writing those tools:** `ToolFactoryOutput`,
+  `PromptFactoryOutput`, `ResourceFactoryOutput`, `ToolRouting`, `ResourceKind`,
+  `McpTextResponse`, plus the `textResponse` / `jsonResponse` envelope builders.
+- **Boot-time name-collision check** (`assertNoToolNameConflict`). A custom tool
+  that reuses a built-in name — or two custom tools sharing a name — throws with
+  both names in the message. Registering a duplicate is last-wins inside the MCP
+  SDK, which would otherwise make a built-in tool silently vanish from
+  `tools/list`.
+
+### Fixed
+- **A Custom-preset API key created through the Local API no longer denies every
+  tool.** `payload.create()` omits `toolAllow` entirely; Payload reads the unset
+  hasMany select back as `[]`, which `composeScopes` honours as deny-all on the
+  tools axis. The `beforeValidate` hook already nulled an explicit `[]` when the
+  key carried collection or global scopes — it now treats a missing value the
+  same way, so a scripted key with resource scopes and no tool list is gated by
+  its resource scopes alone, as the field description says. Keys created through
+  the admin UI were unaffected (the form submits `[]`).
+
+### Changed
+- **`zod` peer range widened to `^3.25 || ^4`**, matching
+  `@modelcontextprotocol/sdk`'s own range. The source was already zod-4 clean
+  (every `z.record` call uses the two-argument form); the old `^3.0.0` range
+  only produced a spurious peer warning on zod 4 hosts. Verified end to end
+  against a Payload 3.88 / Next 16.3 / zod 4.4 host: `initialize`, `tools/list`,
+  and a `findDocument` call all succeed.
+- **`engines.pnpm` relaxed to `>=9`** so the repo's own scripts run under
+  pnpm 11.
+
+### Note
+- 0.7.2 – 0.7.5 were publishing-pipeline releases and carry no changelog entry.
+  Their only functional change is 0.7.5's `createDocument`, which now returns
+  `_status` and uses `documentId` consistently.
+
 ## [0.7.1] - 2026-05-24
 
 ### Fixed

@@ -313,6 +313,25 @@ describe('createApiKeysCollection', () => {
     expect(out.collectionScopes).toEqual([{ slug: 'pages', actions: ['read'] }])
   })
 
+  it('beforeValidate nulls a MISSING toolAllow under Custom when collectionScopes carry entries (Local API key creation)', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    // A key created through payload.create() omits toolAllow entirely. Payload
+    // reads the unset hasMany select back as `[]`, which composeScopes would
+    // otherwise honour as deny-all on the tools axis — every call rejected.
+    const out = hook!({
+      data: {
+        preset: 'custom',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBeNull()
+    expect(out.collectionScopes).toEqual([{ slug: 'pages', actions: ['read'] }])
+  })
+
   it('beforeValidate nulls empty toolAllow under Custom when globalScopes carry entries', () => {
     const collection = createApiKeysCollection(baseOptions)
     const hook = (collection.hooks?.beforeValidate ?? [])[0] as

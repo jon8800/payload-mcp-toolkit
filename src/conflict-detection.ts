@@ -56,3 +56,33 @@ export function assertNoSlugConflict(
     }
   }
 }
+
+/**
+ * Throws if a custom tool reuses a built-in tool's name.
+ *
+ * Registering two tools under one name is silently last-wins inside the MCP
+ * SDK, which turns a typo into a built-in tool quietly disappearing from
+ * `tools/list`. Fail at boot instead, and name both sides in the message.
+ */
+export function assertNoToolNameConflict(
+  builtIn: Array<{ name: string }>,
+  custom: Array<{ name: string }> | undefined,
+): void {
+  if (!custom || custom.length === 0) return
+  const taken = new Set(builtIn.map((t) => t.name))
+  const seen = new Set<string>()
+  for (const tool of custom) {
+    if (taken.has(tool.name)) {
+      throw new Error(
+        `payload-mcp-toolkit: customTools entry "${tool.name}" reuses a built-in tool name. ` +
+          'Rename it — a duplicate name would shadow the built-in tool at registration time.',
+      )
+    }
+    if (seen.has(tool.name)) {
+      throw new Error(
+        `payload-mcp-toolkit: customTools contains two entries named "${tool.name}". Tool names must be unique.`,
+      )
+    }
+    seen.add(tool.name)
+  }
+}

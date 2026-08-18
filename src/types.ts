@@ -1,3 +1,5 @@
+import type { ToolFactoryOutput } from './registry'
+
 /**
  * payload-mcp-toolkit configuration.
  *
@@ -68,6 +70,44 @@ export interface ContentToolkitOptions {
     /** Media collection slug (default: 'media') */
     collectionSlug?: string
   }
+
+  /**
+   * Extra tools to register alongside the built-in ones.
+   *
+   * Each entry is a plain `ToolFactoryOutput`: a name, a description, a Zod
+   * shape (or `z.object({...})`), a handler, and a `routing` tag. Custom tools
+   * go through the same wrapper as the built-ins — scope checks, `req.context
+   * .source = 'mcp'` stamping, and the audit log all apply — and their names
+   * appear in the API-key scope dropdowns.
+   *
+   * The handler receives the live `PayloadRequest`, so a tool that needs the
+   * authenticated user or the Payload instance reads them off `req` per call
+   * rather than closing over them at boot.
+   *
+   * `routing` decides which scope axis gates the tool. Use
+   * `{kind: 'collection', action: 'read'}` for a tool whose args carry a
+   * `collection` (or `slug`) key — the registry reads that key to find the
+   * target for the scope check.
+   *
+   * A custom tool may not reuse a built-in tool's name; the plugin throws at
+   * boot if one does.
+   *
+   * ```ts
+   * mcpToolkitPlugin({
+   *   customTools: [{
+   *     name: 'countActiveMembers',
+   *     description: 'Number of members with an active membership.',
+   *     parameters: { since: z.string().optional() },
+   *     routing: { kind: 'collection', action: 'read' },
+   *     handler: async (args, req) => {
+   *       const { totalDocs } = await req.payload.count({ collection: 'memberships' })
+   *       return { content: [{ type: 'text', text: String(totalDocs) }] }
+   *     },
+   *   }],
+   * })
+   * ```
+   */
+  customTools?: ToolFactoryOutput[]
 
   /**
    * MCP transport / auth configuration. Mostly safe to leave unset;
