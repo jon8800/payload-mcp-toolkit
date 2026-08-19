@@ -203,8 +203,19 @@ function checkResource(
   const resourceScope = scopes[policy.scopeAxis]
 
   if (!resource) {
-    // Resource-keyed tool called without a slug; defer to schema validation.
-    return { allowed: true }
+    // Fail-closed. Every built-in collection/global tool takes a required
+    // `collection` / `slug` argument, so this only fires for a malformed call
+    // or for a host tool that declared resource routing without a resource
+    // argument. Allowing it would let such a tool read a hard-coded collection
+    // straight past the key's whitelist. A tool that genuinely spans the whole
+    // install belongs on `routing.kind: 'account'`.
+    return {
+      allowed: false,
+      reason:
+        `Tool "${toolName}" is routed to a ${policy.label} but the call carries no ` +
+        `${policy.label} argument, so its scope cannot be checked. A tool with a fixed ` +
+        `or install-wide target must use routing.kind: 'account'.`,
+    }
   }
   if (!action) return { allowed: true }
 

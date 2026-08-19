@@ -332,6 +332,24 @@ describe('createApiKeysCollection', () => {
     expect(out.collectionScopes).toEqual([{ slug: 'pages', actions: ['read'] }])
   })
 
+  it('beforeValidate leaves a MALFORMED toolAllow alone so Payload rejects it', () => {
+    const collection = createApiKeysCollection(baseOptions)
+    const hook = (collection.hooks?.beforeValidate ?? [])[0] as
+      | undefined
+      | ((args: { data: unknown; originalDoc?: unknown }) => Record<string, unknown> | undefined)
+
+    // A bare string is not "no restriction" — nulling it would silently drop
+    // the tool gate and leave the collection scopes as the only limit.
+    const out = hook!({
+      data: {
+        preset: 'custom',
+        collectionScopes: [{ slug: 'pages', actions: ['read'] }],
+        toolAllow: 'findDocument',
+      },
+    }) as Record<string, unknown>
+    expect(out.toolAllow).toBe('findDocument')
+  })
+
   it('beforeValidate nulls empty toolAllow under Custom when globalScopes carry entries', () => {
     const collection = createApiKeysCollection(baseOptions)
     const hook = (collection.hooks?.beforeValidate ?? [])[0] as

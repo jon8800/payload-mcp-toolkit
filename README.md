@@ -12,7 +12,8 @@ It is the standalone successor to the toolkit's earlier wrapper around `@payload
 pnpm add payload-mcp-toolkit
 ```
 
-Peer dependencies: `payload` ^3, `zod` ^3.25 or ^4.
+Peer dependencies: `payload` ^3, `zod` ^3.25 or ^4. (Zod 4 needs
+`@modelcontextprotocol/sdk` 1.23 or newer, which this package depends on.)
 
 ## Configure — zero config
 
@@ -187,7 +188,9 @@ const countActiveMembers: ToolFactoryOutput = {
   name: 'countActiveMembers',
   description: 'Number of members with an active membership.',
   parameters: { since: z.string().optional().describe('ISO date.') },
-  routing: { kind: 'collection', action: 'read' },
+  // 'account', not 'collection': the target is hard-coded in the handler, so
+  // there is no argument for the scope check to read. See Scope routing below.
+  routing: { kind: 'account', action: 'read' },
   handler: async (args, req) => {
     const { totalDocs } = await req.payload.count({
       collection: 'memberships',
@@ -221,12 +224,21 @@ The field-by-field contract:
 | `routing` | `{kind, action}` — which scope axis gates the tool. `kind` is `'collection'`, `'global'`, or `'account'`. |
 | `handler` | `(args, req, extra) => McpTextResponse`. Read `req.payload` / `req.user` per call; do not close over them at boot. |
 
-Scope routing reads the target resource from the call's own arguments: a
-`collection`-routed tool should take a `collection` (or `slug`) argument, and
-the registry uses its value to decide whether the key's scopes permit the call.
-A `collection`-routed tool with no such argument is denied for any key that
-carries collection scopes — use `routing.kind: 'account'` for tools that span
-the whole install.
+### Scope routing
+
+Scope routing reads the target resource from the call's own arguments. A
+`collection`-routed tool **must** take a required `collection` argument (a
+`global`-routed tool, a required `slug`); the registry reads that value to
+decide whether the key's scopes permit the call.
+
+A `collection`- or `global`-routed tool called without that argument is
+**denied**, whatever the key's scopes say. There is no target to check, so the
+check cannot pass. Use `routing.kind: 'account'` for a tool whose target is
+fixed in the handler or spans the whole install — account-routed tools are
+gated by the key's preset instead.
+
+Making the argument optional is the trap: the call then reaches the scope check
+with no target and is refused every time.
 
 Run queries as the authenticated user (`user: req.user, overrideAccess: false`)
 so Payload's own access rules still apply inside the tool. `overrideAccess:

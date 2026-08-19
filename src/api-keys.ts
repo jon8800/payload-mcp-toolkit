@@ -231,6 +231,12 @@ export function createApiKeysCollection(
             key in d ? d[key] : orig[key]
           const isNonEmptyArray = (v: unknown): boolean =>
             Array.isArray(v) && v.length > 0
+          // Null, undefined, or `[]` — the three shapes that mean "the user
+          // expressed no tool restriction". Anything else (a bare string, a
+          // number) is malformed and must reach Payload's validator rather than
+          // being silently read as "no restriction".
+          const isUnset = (v: unknown): boolean =>
+            v === null || v === undefined || (Array.isArray(v) && v.length === 0)
 
           const OVERRIDE_AXES = [
             'collectionScopes',
@@ -266,7 +272,7 @@ export function createApiKeysCollection(
           const hasResourceScope =
             isNonEmptyArray(readField('collectionScopes')) ||
             isNonEmptyArray(readField('globalScopes'))
-          if (hasResourceScope && !isNonEmptyArray(readField('toolAllow'))) {
+          if (hasResourceScope && isUnset(readField('toolAllow'))) {
             d.toolAllow = null
           }
           return data

@@ -169,8 +169,13 @@ export function createInitializeServer(
 
         try {
           const result = await tool.handler(args, req, extra)
+          // A handler may report failure in the result envelope instead of
+          // throwing — the MCP spec's own way of letting the model self-correct.
+          // Logging that as a success would hide every such failure from
+          // monitoring.
+          const reportedError = (result as { isError?: unknown })?.isError === true
           safeLog(
-            'info',
+            reportedError ? 'warn' : 'info',
             {
               event: 'mcp.tool_call',
               keyId: keyCtx?.keyId,
@@ -179,12 +184,13 @@ export function createInitializeServer(
               targetSlug,
               targetKind,
               dataKeys,
-              success: true,
-              isError: false,
+              success: !reportedError,
+              isError: reportedError,
               durationMs: Date.now() - start,
               requestId,
+              ...(reportedError ? { errorClass: 'HandlerReportedError' } : {}),
             },
-            `[payload-mcp-toolkit] Tool call: ${tool.name}`,
+            `[payload-mcp-toolkit] Tool call${reportedError ? ' reported an error' : ''}: ${tool.name}`,
           )
           return result
         } catch (err) {

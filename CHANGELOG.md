@@ -28,6 +28,26 @@ adheres to [Semantic Versioning](https://semver.org/).
   `tools/list`.
 
 ### Fixed
+- **A resource-routed tool called without a target is now denied.**
+  `checkResource` previously returned `allowed: true` when the call carried no
+  `collection` / `slug`, deferring to schema validation — safe for the built-ins,
+  because every collection- and global-routed built-in takes that argument as
+  required. `customTools` broke the assumption: a host tool could declare
+  `routing.kind: 'collection'`, take no collection argument, and read a
+  hard-coded collection straight past the key's whitelist. Missing targets now
+  fail closed with a message pointing at `routing.kind: 'account'`, which is the
+  correct routing for a fixed or install-wide target. No built-in behaviour
+  changes.
+- **A malformed `toolAllow` is no longer read as "no restriction".** The
+  `beforeValidate` hook nulls the value only when it is genuinely unset (null,
+  undefined, or `[]`). A bare string or number now survives to Payload's
+  validator, which rejects it, instead of being silently normalised into an
+  unrestricted key.
+- **A handler that reports failure in its result envelope is logged as a
+  failure.** The audit log stamped `success: true` on any fulfilled handler
+  promise, including one returning `{isError: true}` — the MCP spec's own way of
+  letting a model self-correct. Those calls now log at `warn` with
+  `success: false`.
 - **A Custom-preset API key created through the Local API no longer denies every
   tool.** `payload.create()` omits `toolAllow` entirely; Payload reads the unset
   hasMany select back as `[]`, which `composeScopes` honours as deny-all on the
@@ -38,12 +58,19 @@ adheres to [Semantic Versioning](https://semver.org/).
   the admin UI were unaffected (the form submits `[]`).
 
 ### Changed
-- **`zod` peer range widened to `^3.25 || ^4`**, matching
-  `@modelcontextprotocol/sdk`'s own range. The source was already zod-4 clean
-  (every `z.record` call uses the two-argument form); the old `^3.0.0` range
-  only produced a spurious peer warning on zod 4 hosts. Verified end to end
-  against a Payload 3.88 / Next 16.3 / zod 4.4 host: `initialize`, `tools/list`,
-  and a `findDocument` call all succeed.
+- **`zod` peer range widened to `^3.25 || ^4`**, and the
+  `@modelcontextprotocol/sdk` dependency floor raised from `^1.18.0` to
+  `^1.23.0` to match. The two ranges have to move together: SDK 1.18 depends on
+  zod `^3.23.8` and cannot handle zod 4 schemas, so the widened peer range would
+  have been a false promise for any host whose lockfile held an older SDK. 1.23
+  is the first release declaring `^3.25 || ^4.0`. The plugin source was already
+  zod-4 clean (every `z.record` call uses the two-argument form). Verified end to
+  end against a Payload 3.88 / Next 16.3 / zod 4.4 host: `initialize`,
+  `tools/list`, and a `findDocument` call all succeed.
+- **`ToolFactoryOutput` is the only new type export.** `PromptFactoryOutput` and
+  `ResourceFactoryOutput` were dropped before release — there is no
+  `customPrompts` / `customResources` option, so exporting them would have
+  committed to a public shape with no extension point behind it.
 - **`engines.pnpm` relaxed to `>=9`** so the repo's own scripts run under
   pnpm 11.
 

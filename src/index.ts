@@ -300,11 +300,7 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
 // built-in tools use, so a host tool returns the identical result shape.
 export { jsonResponse, textResponse } from './tools/_helpers'
 
-export type {
-  ToolFactoryOutput,
-  PromptFactoryOutput,
-  ResourceFactoryOutput,
-} from './registry'
+export type { ToolFactoryOutput } from './registry'
 export type { ToolRouting, ResourceKind } from './scope/policy'
 export type { McpTextResponse } from './tools/_helpers'
 
