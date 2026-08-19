@@ -197,6 +197,16 @@ export function createApiKeysCollection(
       disableLocalStrategy: true,
       useAPIKey: true,
     },
+    // Every MCP request authenticates by looking up this column. Payload's
+    // `useAPIKey` adds `apiKeyIndex` but does not index it, so each call cost a
+    // sequential scan over the whole key table — and the table only grows.
+    // Declared here rather than added by hand in a host migration, so Payload's
+    // schema builder knows about it and never offers to drop it.
+    //
+    // Not unique: rows exist with a null `apiKeyIndex` (a key row saved before
+    // `enableAPIKey` is ticked), and a unique index would let only one of them
+    // exist at a time.
+    indexes: [{ fields: ['apiKeyIndex'] }],
     hooks: {
       beforeValidate: [
         (({ data, originalDoc }) => {

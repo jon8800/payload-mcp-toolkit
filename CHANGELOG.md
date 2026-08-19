@@ -4,6 +4,20 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-08-19
+
+### Fixed
+- **`apiKeyIndex` is now indexed.** Every MCP request authenticates by looking
+  that column up, and Payload's `useAPIKey` adds the field without an index — so
+  each call cost a sequential scan of the whole key table, getting slower with
+  every key issued. Declared as a collection-level `indexes` entry so Payload's
+  schema builder owns it; adding it by hand in a host migration would drift and
+  Payload would offer to drop it. Deliberately non-unique: a key row saved
+  before `enableAPIKey` is ticked has a null `apiKeyIndex`, and a unique index
+  would allow only one such row at a time.
+
+  Hosts on Postgres with `push: false` need a migration for the new index.
+
 ## [0.8.0] - 2026-08-19
 
 ### Added
