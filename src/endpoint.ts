@@ -37,6 +37,11 @@ export interface CreateMcpEndpointsOptions {
   serverURL?: string
   /** Forwarded to mcp-handler. Default false. */
   verboseLogs?: boolean
+  oauth?: {
+    authenticate: (req: PayloadRequest) => Promise<boolean>
+    metadataURL: string
+    scope: string
+  }
 }
 
 interface JsonRpcErrorBody {
@@ -80,6 +85,11 @@ function isHostAllowed(host: string | null, serverURL: string | undefined): bool
  */
 export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint[] {
   const { buildInitializeServer, allowedOrigins, serverURL, verboseLogs = false } = options
+  function unauthorized(): Response {
+    const response = jsonRpcError(options.oauth ? 'Unauthorized: MCP API key or access token required' : 'Unauthorized: MCP API key required', -32001, 401)
+    if (options.oauth) response.headers.set('WWW-Authenticate', `Bearer resource_metadata="${options.oauth.metadataURL}", scope="${options.oauth.scope}"`)
+    return response
+  }
 
   const postHandler = async (req: PayloadRequest): Promise<Response> => {
     const headers = req.headers as Headers | undefined
@@ -98,8 +108,8 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
     // present a recognized MCP API key. We refuse before constructing any
     // mcp-handler — refusing here prevents tools/list and tool dispatch from
     // running on unauthenticated requests.
-    if (!getApiKeyContext(req)) {
-      return jsonRpcError('Unauthorized: MCP API key required', -32001, 401)
+    if (!getApiKeyContext(req) && !await options.oauth?.authenticate(req)) {
+      return unauthorized()
     }
 
     if (!req.url) return jsonRpcError('Missing request URL', -32600, 400)
@@ -121,7 +131,10 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
     return handler(fetchRequest)
   }
 
-  const getHandler = async (): Promise<Response> => {
+  const getHandler = async (req: PayloadRequest): Promise<Response> => {
+    if (options.oauth && !isHostAllowed(req.headers?.get('host') ?? null, serverURL)) return jsonRpcError('Invalid host', -32600, 400)
+    if (options.oauth && !isOriginAllowed(req.headers?.get('origin') ?? null, allowedOrigins)) return jsonRpcError('Origin not allowed', -32600, 403)
+    if (options.oauth && !getApiKeyContext(req) && !await options.oauth.authenticate(req)) return unauthorized()
     return jsonRpcError('POST required for MCP requests', -32600, 405)
   }
 

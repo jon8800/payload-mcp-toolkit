@@ -4,6 +4,16 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-09-23
+
+### Added
+- Optional website-account OAuth for remote MCP connectors, including Claude Desktop. Includes consent, PKCE S256, short-lived access tokens, rotating refresh tokens, disconnect controls and discovery endpoints.
+- Required host eligibility policy, rechecked on every OAuth-authenticated MCP request. OAuth tokens do not authenticate ordinary Payload REST requests.
+- Private OAuth storage with database-enforced one-use tokens. Hosts must generate a migration and add root discovery rewrites before enabling it in production. See `docs/oauth.md`.
+- Consent and connection management use Payload admin views and UI components. They inherit the host theme, fonts and surface tokens. Hosts must regenerate the import map and configure the documented admin security headers.
+- The connections page shows agent instructions with a Copy button. Users paste them into their AI app. They include the connector URL, the site's access level and safe working rules.
+- With `access: 'editor'`, the MCP `401` challenge asks for `mcp:read mcp:write`, so clients request write access on first connection.
+
 ## [0.8.1] - 2026-08-19
 
 ### Fixed

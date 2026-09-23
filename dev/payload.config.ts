@@ -42,6 +42,14 @@ export default buildConfig({
     // `versions.drafts`, preview URLs from `admin.livePreview.url`, the auth
     // collection from `admin.user`, and the site URL from `serverURL` above.
     mcpToolkitPlugin({
+      oauth: {
+        canAuthorize: ({ user }) => Boolean(user), access: 'editor',
+        redirectURIs: [
+          'https://claude.ai/api/mcp/auth_callback',
+          'https://claude.com/api/mcp/auth_callback',
+          `${process.env.SITE_URL || 'http://localhost:3000'}/`,
+        ],
+      },
       domainPrompts: [
         {
           name: 'sampleSiteVocabulary',

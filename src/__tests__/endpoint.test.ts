@@ -42,6 +42,25 @@ describe('createMcpEndpoints', () => {
   const initializeServer = vi.fn()
   const buildInitializeServer = vi.fn(() => initializeServer)
 
+  it('advertises OAuth discovery on unauthenticated GET and POST', async () => {
+    const oauth = { authenticate: vi.fn(async () => false), metadataURL: 'https://app.example.com/api/mcp/oauth/resource', scope: 'mcp:read mcp:write' }
+    const endpoints = createMcpEndpoints({ buildInitializeServer, oauth })
+    for (const endpoint of endpoints) {
+      const response = await endpoint.handler(buildReq({ authenticated: false }) as never)
+      expect(response.status).toBe(401)
+      expect(response.headers.get('www-authenticate')).toBe(`Bearer resource_metadata="${oauth.metadataURL}", scope="mcp:read mcp:write"`)
+    }
+    expect(createMcpHandlerMock).not.toHaveBeenCalled()
+  })
+
+  it('authenticates OAuth only before MCP dispatch without requiring an API key', async () => {
+    const authenticate = vi.fn(async () => true)
+    const [endpoint] = createMcpEndpoints({ buildInitializeServer, oauth: { authenticate, metadataURL: 'https://app.example.com/metadata', scope: 'mcp:read' } })
+    expect((await endpoint.handler(buildReq({ authenticated: false }) as never)).status).toBe(200)
+    expect(authenticate).toHaveBeenCalledOnce()
+    expect(createMcpHandlerMock).toHaveBeenCalledOnce()
+  })
+
   beforeEach(() => {
     initializeServer.mockClear()
     buildInitializeServer.mockClear()

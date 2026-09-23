@@ -13,6 +13,8 @@ import { computeDraftCollections, computeDraftGlobals } from './draft-workflow'
 import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys'
 import { createBearerStrategy } from './auth-strategy'
 import { createMcpEndpoints } from './endpoint'
+import { createOAuth } from './oauth'
+import { createOAuthCollection, OAUTH_COLLECTION } from './oauth-store'
 import {
   createInitializeServer,
   type ToolFactoryOutput,
@@ -80,6 +82,7 @@ function resolveUserCollection(
 export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
   return (incomingConfig: Config): Config => {
     const apiKeysSlug = options.apiKeyCollection?.slug ?? API_KEYS_DEFAULT_SLUG
+    if (options.oauth) assertNoSlugConflict(incomingConfig.collections as CollectionConfig[] | undefined, OAUTH_COLLECTION)
 
     // Conflict detection — fail fast with actionable messages.
     assertNoUpstreamPlugin(incomingConfig.plugins)
@@ -244,6 +247,7 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
     // config at boot time. Adding a collection requires a dev restart for
     // it to surface as a scope option.
     const userCollection = resolveUserCollection(options, incomingConfig)
+    const oauth = options.oauth ? createOAuth(options.oauth, incomingConfig, userCollection) : undefined
     const availableCollections = collections
       .map((c) => c.slug)
       .filter((s) => s !== apiKeysSlug)
@@ -256,7 +260,7 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
       availableGlobals,
       availableTools,
     })
-    const updatedCollections: CollectionConfig[] = [...collections, apiKeysCollection]
+    const updatedCollections: CollectionConfig[] = [...collections, apiKeysCollection, ...(oauth ? [createOAuthCollection()] : [])]
 
     // Attach the bearer strategy to the user collection's auth config.
     const bearerStrategy = createBearerStrategy({
@@ -286,12 +290,32 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
       buildInitializeServer,
       allowedOrigins: options.auth?.allowedOrigins,
       serverURL: incomingConfig.serverURL,
+      oauth,
     })
 
     return {
       ...incomingConfig,
+      ...(oauth ? { admin: {
+        ...incomingConfig.admin,
+        components: {
+          ...incomingConfig.admin?.components,
+          views: {
+            ...incomingConfig.admin?.components?.views,
+            mcpAuthorize: { path: '/mcp-authorize', exact: true, meta: { title: 'Connect your account' }, Component: {
+              path: 'payload-mcp-toolkit/client#OAuthView', clientProps: { mode: 'authorize' },
+            } },
+            mcpConnections: { path: '/mcp-connections', exact: true, meta: { title: 'AI connections' }, Component: {
+              path: 'payload-mcp-toolkit/client#OAuthView', clientProps: { mode: 'connections' },
+            } },
+          },
+          beforeDashboard: [
+            ...(incomingConfig.admin?.components?.beforeDashboard ?? []),
+            'payload-mcp-toolkit/client#OAuthConnectBanner',
+          ],
+        },
+      } } : {}),
       collections: collectionsWithStrategy,
-      endpoints: [...(incomingConfig.endpoints ?? []), ...mcpEndpoints],
+      endpoints: [...(incomingConfig.endpoints ?? []), ...mcpEndpoints, ...(oauth?.endpoints ?? [])],
     }
   }
 }
@@ -299,6 +323,8 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
 // Runtime helpers for building custom tools — the same envelope builders the
 // built-in tools use, so a host tool returns the identical result shape.
 export { jsonResponse, textResponse } from './tools/_helpers'
+export type { OAuthOptions } from './oauth'
+export { pruneOAuthRecords } from './oauth-store'
 
 export type { ToolFactoryOutput } from './registry'
 export type { ToolRouting, ResourceKind } from './scope/policy'

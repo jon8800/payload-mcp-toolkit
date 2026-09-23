@@ -26,6 +26,16 @@ function baseConfig(): Config {
 }
 
 describe('mcpToolkitPlugin integration', () => {
+  it('adds optional OAuth storage, routes and banner without adding a global OAuth auth strategy', () => {
+    const original = baseConfig()
+    original.admin = { ...original.admin, components: { beforeDashboard: ['ExistingBanner'] } }
+    const cfg = mcpToolkitPlugin({ oauth: { canAuthorize: () => true } })(original)
+    expect(cfg.collections?.some(c => c.slug === 'payload-mcp-oauth')).toBe(true)
+    expect(cfg.endpoints?.some(e => e.path === '/mcp/oauth/authorize')).toBe(true)
+    expect(cfg.admin?.components?.beforeDashboard).toEqual(['ExistingBanner', 'payload-mcp-toolkit/client#OAuthConnectBanner'])
+    const auth = cfg.collections?.find(c => c.slug === 'users')?.auth
+    expect(typeof auth === 'object' && auth.strategies?.map(s => s.name)).toEqual(['mcp-toolkit-bearer'])
+  })
   it('appends the api-keys collection and the MCP endpoints additively', () => {
     const cfg = mcpToolkitPlugin()(baseConfig())
     const slugs = (cfg.collections ?? []).map((c) => c.slug)

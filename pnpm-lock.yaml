@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@modelcontextprotocol/sdk':
-        specifier: ^1.18.0
+        specifier: ^1.23.0
         version: 1.27.1(zod@3.25.76)
       mcp-handler:
         specifier: ^1.1.0

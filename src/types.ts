@@ -1,4 +1,5 @@
 import type { ToolFactoryOutput } from './registry'
+import type { OAuthOptions } from './oauth'
 
 /**
  * payload-mcp-toolkit configuration.
@@ -7,6 +8,8 @@ import type { ToolFactoryOutput } from './registry'
  * for the cases where Payload's own config doesn't carry enough signal.
  */
 export interface ContentToolkitOptions {
+  /** Optional website-account authorization for remote MCP connectors. */
+  oauth?: OAuthOptions
   /**
    * Preview URL behavior. The toolkit reads `collection.admin.livePreview.url`
    * (or `collection.admin.preview` as a fallback) when generating preview links

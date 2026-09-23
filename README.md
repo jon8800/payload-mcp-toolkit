@@ -8,6 +8,8 @@ It is the standalone successor to the toolkit's earlier wrapper around `@payload
 
 ## Install
 
+For website-account sign-in from Claude Desktop, see [OAuth setup](docs/oauth.md).
+
 ```bash
 pnpm add payload-mcp-toolkit
 ```
