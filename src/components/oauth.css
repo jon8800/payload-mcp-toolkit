@@ -21,6 +21,32 @@
 .mcp-oauth__details dd { margin: calc(var(--base) * .25) 0 var(--base); line-height: 1.6; overflow-wrap: anywhere; }
 .mcp-oauth__details dd:last-child { margin-bottom: 0; }
 .mcp-oauth__actions { display: flex; flex-wrap: wrap; gap: calc(var(--base) * .5); }
+.mcp-oauth__permissions { display: flex; flex-direction: column; gap: var(--base); margin-bottom: calc(var(--base) * 1.5); }
+.mcp-oauth__permissions h3 { margin: var(--base) 0 calc(var(--base) * .5); font-size: 1rem; }
+.mcp-oauth__permissions h3:first-child { margin-top: 0; }
+.mcp-oauth__permissions p { margin: 0 0 calc(var(--base) * .5); color: var(--theme-elevation-600); }
+.mcp-oauth__customize {
+  background: var(--theme-elevation-50);
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: var(--style-radius-m);
+}
+.mcp-oauth__customize > summary {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--base) * .15);
+  padding: calc(var(--base) * .75) var(--base);
+  cursor: pointer;
+  list-style: none;
+}
+.mcp-oauth__customize > summary::-webkit-details-marker { display: none; }
+/* The second value is the arrow's alt text: empty, so screen readers skip it. */
+.mcp-oauth__customize > summary strong::after { content: ' ▸'; content: ' ▸' / ''; color: var(--theme-elevation-500); }
+.mcp-oauth__customize[open] > summary strong::after { content: ' ▾'; content: ' ▾' / ''; }
+.mcp-oauth__customize > summary span { color: var(--theme-elevation-600); font-size: .8125rem; }
+.mcp-oauth__customize > summary:focus-visible { outline: var(--accessibility-outline); outline-offset: var(--accessibility-outline-offset); }
+.mcp-oauth__customize[open] > summary { border-bottom: 1px solid var(--theme-elevation-150); }
+.mcp-oauth__customize-body { padding: var(--base); }
+.mcp-oauth__tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: calc(var(--base) * .5) var(--base); }
 .mcp-oauth__url { display: block; padding: var(--base); background: var(--theme-elevation-50); overflow-wrap: anywhere; }
 .mcp-oauth__instructions {
   margin: 0;

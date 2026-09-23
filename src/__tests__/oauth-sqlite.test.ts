@@ -11,7 +11,7 @@ const callback = 'https://claude.ai/api/mcp/auth_callback'
 const resource = `${origin}/api/mcp`
 let user: PayloadRequest['user']
 const config = { serverURL: origin, collections: [{ slug: 'users', auth: true, fields: [] }] }
-const oauth = createOAuth({ canAuthorize: () => true, access: 'editor' }, config, 'users')
+const oauth = createOAuth({ canAuthorize: () => true, access: 'editor' }, config, 'users', { collections: [], globals: [], tools: [] })
 
 async function call(path: string, body?: URLSearchParams | object, asUser = false) {
   const method = body ? 'post' : 'get'

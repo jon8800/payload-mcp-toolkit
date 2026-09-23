@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers'
 
 const DEFAULT_LIST_LIMIT = 10
 
@@ -52,6 +52,7 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
 
       try {
         const result = await req.payload.findGlobalVersions({
+          depth: populateDepth(req),
           slug: slug as never,
           sort: '-updatedAt',
           limit,

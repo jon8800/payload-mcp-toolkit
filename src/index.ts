@@ -247,7 +247,11 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
     // config at boot time. Adding a collection requires a dev restart for
     // it to surface as a scope option.
     const userCollection = resolveUserCollection(options, incomingConfig)
-    const oauth = options.oauth ? createOAuth(options.oauth, incomingConfig, userCollection) : undefined
+    const oauth = options.oauth ? createOAuth(options.oauth, incomingConfig, userCollection, {
+      collections: [...collectionsBySlug.keys()],
+      globals: [...exposedGlobalSchemas.keys()],
+      tools: tools.map(t => ({ name: t.name, kind: t.routing.kind, action: t.routing.action })),
+    }) : undefined
     const availableCollections = collections
       .map((c) => c.slug)
       .filter((s) => s !== apiKeysSlug)

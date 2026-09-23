@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Required host eligibility policy, rechecked on every OAuth-authenticated MCP request. OAuth tokens do not authenticate ordinary Payload REST requests.
 - Private OAuth storage with database-enforced one-use tokens. Hosts must generate a migration and add root discovery rewrites before enabling it in production. See `docs/oauth.md`.
 - Consent and connection management use Payload admin views and UI components. They inherit the host theme, fonts and surface tokens. Hosts must regenerate the import map and configure the documented admin security headers.
+- Per-connection permissions on the consent screen: read-only or editor, a collection matrix, a global matrix and a tool list, the same choices as an API key's Custom preset. Everything starts selected. The choice is stored on the grant, capped at the site's `access` level, and enforced on every request by the existing scope checker. The connections page summarizes each connection's access.
+- Scope denial messages now say "API key or connection", because OAuth connections use the same checks.
+- API keys and connections limited to some collections or globals get linked entries as IDs only, and `findDocument` refuses dotted filter paths for them. Before, relationship population could show entries from collections outside the list.
+- The API-key scope matrix is split into a reusable `ScopesMatrix`, and its checkboxes now have accessible names.
 - A compact "Connect your AI agent" prompt in the admin sidebar copies the agent setup prompt in one click. It shows only to accounts that may connect and can be dismissed. Hosts with a custom `Nav` render `AgentConnectPill` themselves.
 - The connections page shows agent instructions with a Copy button. Users paste them into their AI app. They include the connector URL, the site's access level and safe working rules.
 - With `access: 'editor'`, the MCP `401` challenge asks for `mcp:read mcp:write`, so clients request write access on first connection.

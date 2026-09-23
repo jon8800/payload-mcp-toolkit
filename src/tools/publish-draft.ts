@@ -7,8 +7,7 @@ import {
   snapshotPublishMarker,
   stampMcpContext,
   textResponse,
-  verifyPublishSucceededDespiteError,
-} from './_helpers'
+  verifyPublishSucceededDespiteError, populateDepth } from './_helpers'
 
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {
@@ -51,6 +50,7 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
 
       try {
         const doc = await req.payload.update({
+          depth: populateDepth(req),
           collection: collection as any,
           id: documentId,
           data: { _status: 'published' } as any,

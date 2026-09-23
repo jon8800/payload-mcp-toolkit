@@ -6,8 +6,7 @@ import {
   jsonResponse,
   requireDraftCollection,
   stampMcpContext,
-  textResponse,
-} from './_helpers'
+  textResponse, populateDepth } from './_helpers'
 
 const DEFAULT_LIST_LIMIT = 10
 
@@ -55,6 +54,7 @@ export function createListVersionsTool(draftCollections: Set<string>) {
 
       try {
         const result = await req.payload.findVersions({
+          depth: populateDepth(req),
           collection: collection as any,
           where: { parent: { equals: documentId } },
           sort: '-updatedAt',
@@ -129,6 +129,7 @@ export function createRestoreVersionTool(draftCollections: Set<string>) {
 
       try {
         const restored = await req.payload.restoreVersion({
+          depth: populateDepth(req),
           collection: collection as any,
           id: versionId,
           req,

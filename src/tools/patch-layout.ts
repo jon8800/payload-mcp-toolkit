@@ -6,8 +6,7 @@ import {
   errorMessage,
   getDocDisplayName,
   jsonResponse,
-  stampMcpContext,
-} from './_helpers'
+  stampMcpContext, populateDepth } from './_helpers'
 import { applyOperation, errorResponse, validateBlockList } from './_layout-helpers'
 
 /**
@@ -132,6 +131,7 @@ export function createPatchLayoutTool(
 
       try {
         const updated = await req.payload.update({
+          depth: populateDepth(req),
           collection: collection as any,
           id: documentId,
           data: { [layoutField]: finalLayout } as any,

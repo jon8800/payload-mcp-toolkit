@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { GlobalConfig, PayloadRequest } from 'payload'
 import type { GlobalSchema } from '../types'
-import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers'
 
 interface FindGlobalArgs {
   slug: string
@@ -78,7 +78,7 @@ export function createFindGlobalTool(
       try {
         const doc = await req.payload.findGlobal({
           slug: slug as never,
-          depth: depth ?? 1,
+          depth: populateDepth(req, depth ?? 1),
           draft: draft ?? false,
           ...(locale ? { locale: locale as never } : {}),
           req,

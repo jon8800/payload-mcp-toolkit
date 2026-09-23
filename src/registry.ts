@@ -3,7 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ZodObject, type ZodTypeAny } from 'zod'
 import { getApiKeyContext } from './auth-strategy'
 import type { InitializeServerForRequest } from './endpoint'
-import { stampMcpContext, type McpTextResponse } from './tools/_helpers'
+import { LIMITED_SCOPE, stampMcpContext, type McpTextResponse } from './tools/_helpers'
 import {
   assertScopeAllows,
   buildRoutingTables,
@@ -166,6 +166,9 @@ export function createInitializeServer(
         }
 
         stampMcpContext(req)
+        // A key or connection limited to some collections or globals must not see linked entries
+        // from the others: tools then read relationships as IDs only (populateDepth).
+        req.context = { ...req.context, [LIMITED_SCOPE]: Boolean(keyCtx?.scopes?.collections || keyCtx?.scopes?.globals) }
 
         try {
           const result = await tool.handler(args, req, extra)

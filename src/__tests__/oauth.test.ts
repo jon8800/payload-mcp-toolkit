@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Config, Payload, PayloadRequest } from 'payload'
 import { describe, expect, it, vi } from 'vitest'
 import { createOAuth, type OAuthOptions } from '../oauth'
+import type { Catalog } from '../oauth-permissions'
 import { consumeRecord, createOAuthCollection, OAUTH_COLLECTION, tokenKey, type OAuthRecord } from '../oauth-store'
 
 const origin = 'https://cms.example.com'
@@ -11,6 +12,12 @@ const verifier = 'a'.repeat(43)
 const challenge = createHash('sha256').update(verifier).digest('base64url')
 const account = { id: 7, email: 'editor@example.com', collection: 'users', role: 'editor' }
 const config = { serverURL: origin, collections: [{ slug: 'users', auth: true }] } as Config
+const catalog: Catalog = { collections: ['posts', 'pages'], globals: ['settings'], tools: [
+  { name: 'findDocument', kind: 'collection', action: 'read' },
+  { name: 'updateDocument', kind: 'collection', action: 'update' },
+  { name: 'deleteDocument', kind: 'collection', action: 'delete' },
+  { name: 'searchContent', kind: 'account', action: 'read' },
+] }
 
 function duplicateError(collection = OAUTH_COLLECTION, path = 'key') {
   return Object.assign(new Error('Value must be unique'), {
@@ -42,7 +49,7 @@ function setup(options: Partial<OAuthOptions> = {}, configOverrides: Partial<Con
   })
   const payload = { secret: 'test-secret', find, create, update, logger: { error: vi.fn() } } as unknown as Payload
   const canAuthorize = vi.fn((req: PayloadRequest) => (req.user as any)?.role === 'editor')
-  const oauth = createOAuth({ canAuthorize, ...options }, { ...config, ...configOverrides }, 'users')
+  const oauth = createOAuth({ canAuthorize, ...options }, { ...config, ...configOverrides }, 'users', catalog)
 
   function request(path: string, method = 'GET', body?: string, user: unknown = account, headers: Record<string, string> = {}) {
     return Object.assign(new Request(`${origin}/api/mcp/oauth${path}`, {
@@ -224,7 +231,7 @@ describe('OAuth website authorization', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('no-store')
     expect(response.headers.get('content-type')).toContain('application/json')
-    expect(await response.json()).toEqual({ consent: expect.any(String), clientName: expect.any(String), account: account.email, scope: 'mcp:read' })
+    expect(await response.json()).toEqual({ consent: expect.any(String), clientName: expect.any(String), account: account.email, scope: 'mcp:read', catalog })
   })
 
   it.each(['/admin', '/cms'])('redirects browser connection management to the Payload view under %s', async admin => {
@@ -240,7 +247,7 @@ describe('OAuth website authorization', () => {
     const response = await f.call('/connections', 'GET', undefined, account, { accept: 'application/json' })
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toContain('no-store')
-    expect(await response.json()).toEqual({ resource, access: 'read-only', eligible: true, grants: [{ clientName: expect.any(String), scope: 'mcp:read', consent: expect.any(String) }] })
+    expect(await response.json()).toEqual({ resource, access: 'read-only', eligible: true, grants: [{ clientName: expect.any(String), scope: 'mcp:read', summary: 'Read only · all collections · all globals · all tools', consent: expect.any(String) }] })
   })
 
   it('rejects an external login URL instead of forwarding the authorization request', async () => {
@@ -530,5 +537,75 @@ describe('OAuth record consumption and private storage', () => {
     expect(collection.slug).toBe(OAUTH_COLLECTION)
     expect(collection.fields).toContainEqual({ name: 'key', type: 'text', required: true, unique: true })
     for (const operation of ['create', 'read', 'update', 'delete'] as const) expect(collection.access![operation]!({} as never)).toBe(false)
+  })
+})
+
+describe('OAuth consent permissions', () => {
+  async function approve(f: ReturnType<typeof setup>, permissions?: unknown) {
+    const client = await f.register()
+    const approval = await f.consent(client, { scope: 'mcp:read mcp:write' })
+    const body = new URLSearchParams({ consent: approval, decision: 'allow',
+      ...(permissions === undefined ? {} : { permissions: typeof permissions === 'string' ? permissions : JSON.stringify(permissions) }) })
+    return { client, approval, response: await f.call('/authorize', 'POST', body.toString()) }
+  }
+  async function tokensFor(f: ReturnType<typeof setup>, permissions?: unknown) {
+    const { client, response } = await approve(f, permissions)
+    expect(response.status).toBe(303)
+    const code = new URL(response.headers.get('location')!).searchParams.get('code')!
+    return (await f.exchange(client, code)).json()
+  }
+  async function scopesFor(f: ReturnType<typeof setup>, token: string) {
+    const req = f.bearer(token)
+    expect(await f.oauth.authenticate(req)).toBe(true)
+    return (req.user as any)._mcpKey.scopes
+  }
+
+  it('offers the catalog on the consent screen and grants everything when nothing is customized', async () => {
+    const f = setup({ access: 'editor' })
+    const client = await f.register()
+    const response = await f.call(`/authorize?${f.authParams(client, { scope: 'mcp:read mcp:write' })}`, 'GET', undefined, account, { accept: 'application/json' })
+    expect((await response.json()).catalog).toEqual(catalog)
+    const tokens = await tokensFor(f)
+    expect(tokens.scope).toBe('mcp:read mcp:write')
+    expect(await scopesFor(f, tokens.access_token)).toEqual({ preset: 'editor' })
+  })
+
+  it('stores the picked collections, globals and tools and applies them on every request', async () => {
+    const f = setup({ access: 'editor' })
+    const tokens = await tokensFor(f, { level: 'editor', collections: { posts: ['read', 'update', 'delete'] }, globals: {}, tools: ['findDocument', 'updateDocument', 'deleteDocument'] })
+    expect(await scopesFor(f, tokens.access_token)).toEqual({
+      preset: 'editor', collections: { posts: ['read', 'update'] }, globals: {}, tools: { allow: ['findDocument', 'updateDocument'] },
+    })
+    const listed = await (await f.call('/connections', 'GET', undefined, account, { accept: 'application/json' })).json()
+    expect(listed.grants[0].summary).toBe('Read, create and update · 1 of 2 collections · 0 of 1 globals · 2 of 3 tools')
+  })
+
+  it('narrows the token scope when the user picks read only', async () => {
+    const f = setup({ access: 'editor' })
+    const tokens = await tokensFor(f, { level: 'read-only' })
+    expect(tokens.scope).toBe('mcp:read')
+    expect(await scopesFor(f, tokens.access_token)).toEqual({ preset: 'read-only' })
+  })
+
+  it('never grants more than the site allows, whatever the form sends', async () => {
+    const f = setup()
+    const tokens = await tokensFor(f, { level: 'editor', collections: { posts: ['read', 'create'], secrets: ['read'] }, tools: ['updateDocument', 'findDocument', 'nope'] })
+    expect(tokens.scope).toBe('mcp:read')
+    expect(await scopesFor(f, tokens.access_token)).toEqual({ preset: 'read-only', collections: { posts: ['read'] }, tools: { allow: ['findDocument'] } })
+  })
+
+  it('caps stored write access again when the token is narrowed later', async () => {
+    const f = setup({ access: 'editor' })
+    const tokens = await tokensFor(f, { level: 'editor', collections: { posts: ['read', 'create', 'update'] } })
+    const narrowed = await (await f.refresh(await f.register(), tokens.refresh_token, { scope: 'mcp:read' })).json()
+    expect(await scopesFor(f, narrowed.access_token)).toEqual({ preset: 'read-only', collections: { posts: ['read'] } })
+  })
+
+  it.each(['not json', '[]', 'null', '"editor"'])('rejects a malformed permissions field without using up the consent: %s', async permissions => {
+    const f = setup({ access: 'editor' })
+    const { approval, response } = await approve(f, permissions)
+    expect(response.status).toBe(400)
+    const retry = await f.call('/authorize', 'POST', new URLSearchParams({ consent: approval, decision: 'allow' }).toString())
+    expect(retry.status).toBe(303)
   })
 })

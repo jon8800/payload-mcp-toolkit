@@ -6,8 +6,7 @@ import {
   errorMessage,
   jsonResponse,
   stampMcpContext,
-  textResponse,
-} from './_helpers'
+  textResponse, hasDottedPath, LIMITED_SCOPE, populateDepth } from './_helpers'
 
 interface FindDocumentArgs {
   collection: string
@@ -110,7 +109,7 @@ export function createFindDocumentTool(
           const doc = await req.payload.findByID({
             collection: collection as never,
             id: documentId,
-            depth: depth ?? 1,
+            depth: populateDepth(req, depth ?? 1),
             draft: draft ?? false,
             req,
             overrideAccess: false,
@@ -138,10 +137,16 @@ export function createFindDocumentTool(
           }
         }
 
+        if (req.context?.[LIMITED_SCOPE] && hasDottedPath(parsedWhere)) {
+          return textResponse(
+            'Error: filters with a dotted path (nested or linked fields) are not available when access is limited to some collections or globals.',
+          )
+        }
+
         const result = await req.payload.find({
           collection: collection as never,
           where: parsedWhere as never,
-          depth: depth ?? 1,
+          depth: populateDepth(req, depth ?? 1),
           limit: limit ?? 25,
           draft: draft ?? false,
           req,

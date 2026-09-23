@@ -221,7 +221,7 @@ describe('assertScopeAllows — globals', () => {
       'footer',
     )
     expect(decision.allowed).toBe(false)
-    expect(decision.reason).toMatch(/Global "footer" is not in this API key's allowed globals/)
+    expect(decision.reason).toMatch(/Global "footer" is not in the allowed globals for this API key or connection/)
   })
 })
 
@@ -576,6 +576,24 @@ describe('createInitializeServer', () => {
     const [logFields] = req.payload.logger.info.mock.calls[0]!
     expect(logFields.targetSlug).toBeUndefined()
     expect(logFields.targetKind).toBe('account')
+  })
+
+  it.each([
+    [null, false],
+    [{ preset: 'editor' as const }, false],
+    [{ preset: 'editor' as const, collections: { posts: ['read' as const, 'create' as const] } }, true],
+    [{ preset: 'editor' as const, globals: {} }, true],
+  ])('flags limited scopes so tools read linked entries as IDs: %j', async (scopes, limited) => {
+    const seen: unknown[] = []
+    const req = buildReq({ scopes })
+    const init = createInitializeServer({ tools: [makeTool(async (_args, r: { context: Record<string, unknown> }) => {
+      seen.push(r.context.mcpLimitedScope)
+      return { content: [{ type: 'text', text: 'ok' }] }
+    })] })
+    init(req as never)(server as never)
+    const wrapped = server.registerTool.mock.calls.at(-1)![2] as (args: Record<string, unknown>, extra: unknown) => Promise<unknown>
+    await wrapped({ collection: 'posts', data: '{}' }, {})
+    expect(seen).toEqual([limited])
   })
 
   it('stamps mcp context on req before invoking the handler', async () => {

@@ -75,6 +75,22 @@ describe('findDocument', () => {
     )
   })
 
+  it('reads linked entries as IDs and refuses dotted filters when access is limited to some collections', async () => {
+    const tool = createFindDocumentTool(schemas, drafts, configs, undefined)
+    const req = buildReq()
+    req.payload.find.mockResolvedValue({ docs: [], totalDocs: 0 })
+    await tool.handler({ collection: 'posts', depth: 2 }, req as never, {})
+    expect(req.payload.find).toHaveBeenLastCalledWith(expect.objectContaining({ depth: 2 }))
+
+    const limited = { ...buildReq(), context: { mcpLimitedScope: true } }
+    limited.payload.find.mockResolvedValue({ docs: [], totalDocs: 0 })
+    await tool.handler({ collection: 'posts', depth: 2 }, limited as never, {})
+    expect(limited.payload.find).toHaveBeenLastCalledWith(expect.objectContaining({ depth: 0 }))
+    const dotted = await tool.handler({ collection: 'posts', where: '{"or":[{"author.email":{"like":"a"}}]}' }, limited as never, {})
+    expect(dotted.content[0]!.text).toContain('dotted path')
+    expect(limited.payload.find).toHaveBeenCalledTimes(1)
+  })
+
   it('returns a text error response (no exception) on invalid where JSON', async () => {
     const tool = createFindDocumentTool(schemas, drafts, configs, undefined)
     const req = buildReq()

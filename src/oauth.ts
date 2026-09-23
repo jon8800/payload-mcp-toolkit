@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { Config, Endpoint, Payload, PayloadRequest } from 'payload'
 import { extractBearerToken, hashKey, verifyHash } from './hash'
+import { clampScopes, permissionsFrom, summarize, type Catalog, type Choice, type Level } from './oauth-permissions'
 import { consumeRecord, isLive, readRecord, revokeGrant, tokenKey, writeRecord, OAUTH_COLLECTION, type OAuthRecord } from './oauth-store'
+import type { KeyScopes } from './types'
 
 const BASE = '/mcp/oauth'
 const READ = 'mcp:read'
@@ -27,21 +29,24 @@ class OAuthError extends Error {
   constructor(public code: string, public status = 400) { super(code) }
 }
 
+const levelOf = (scope: string): Level => scope.split(' ').includes(WRITE) ? 'editor' : 'read-only'
 const randomToken = () => randomBytes(32).toString('base64url')
 const expires = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString()
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } })
 const redirect = (url: string) => new Response(null, { status: 303, headers: { Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } })
 
-async function parameters(req: PayloadRequest): Promise<URLSearchParams> {
+// The consent form carries the permission choice, which grows with the number of collections.
+async function parameters(req: PayloadRequest, limit = 16_384): Promise<URLSearchParams> {
   if (!req.text || !req.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded')) throw new OAuthError('invalid_request')
   const text = await req.text()
-  if (text.length > 16_384) throw new OAuthError('invalid_request')
+  if (text.length > limit) throw new OAuthError('invalid_request')
   const params = new URLSearchParams(text)
   for (const key of params.keys()) if (params.getAll(key).length !== 1) throw new OAuthError('invalid_request')
   return params
 }
 
-export function createOAuth(options: OAuthOptions, config: Config, userCollection: string) {
+/** `catalog` is what the consent screen offers: exposed collections, globals and registered tools. */
+export function createOAuth(options: OAuthOptions, config: Config, userCollection: string, catalog: Catalog) {
   if (typeof options.canAuthorize !== 'function') throw new Error('OAuth requires canAuthorize(req).')
   const origin = new URL(config.serverURL || '')
   if (origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password ||
@@ -175,11 +180,11 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     const consent = signed(req.payload, { user: req.user.id, client: registered.id, redirect: registered.uri,
       challenge: params.get('code_challenge'), state: params.get('state'), scope, resource, expires: Date.now() + 600_000, nonce: randomToken() })
     if (!req.headers.get('accept')?.includes('application/json')) return redirect(`${adminURL}/mcp-authorize?${params}`)
-    return json({ consent, clientName: new URL(registered.uri).hostname, account: String(req.user.email ?? req.user.id), scope })
+    return json({ consent, clientName: new URL(registered.uri).hostname, account: String(req.user.email ?? req.user.id), scope, catalog })
   })
   endpoint('/authorize', 'post', async req => {
     if (!await session(req)) throw new OAuthError('access_denied', 403)
-    const params = await parameters(req)
+    const params = await parameters(req, 131_072)
     const consent = verified(req.payload, params.get('consent') ?? '')
     csrf(req, consent)
     const registered = client(req, String(consent.client))
@@ -189,11 +194,19 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     callback.searchParams.set('iss', issuer)
     if (params.get('decision') === 'deny') { callback.searchParams.set('error', 'access_denied'); return redirect(callback.href) }
     if (params.get('decision') !== 'allow') throw new OAuthError('invalid_request')
+    // The consent screen submits what the user picked; without it the grant gets everything the request allows.
+    let choice: Choice = { level: 'editor' }
+    const picked = params.get('permissions')
+    if (picked !== null) {
+      try { choice = JSON.parse(picked) } catch { throw new OAuthError('invalid_request') }
+      if (!choice || typeof choice !== 'object' || Array.isArray(choice)) throw new OAuthError('invalid_request')
+    }
+    const { level, permissions } = permissionsFrom(choice, catalog, levelOf(scopes(String(consent.scope)) || READ))
+    const scope = level === 'editor' ? `${READ} ${WRITE}` : READ
     const used: OAuthRecord = { id: '', key: tokenKey(req.payload, String(consent.nonce)), kind: 'code', expiresAt: new Date(Number(consent.expires)).toISOString(), data: {} }
     if (!await consumeRecord(req.payload, used)) throw new OAuthError('invalid_request')
-    const scope = scopes(String(consent.scope)) || READ
     const grant = { key: `grant:${randomToken()}`, kind: 'grant' as const, expiresAt: expires(GRANT_SECONDS), owner: String(req.user!.id),
-      data: { user: req.user!.id, client: registered.id, redirect: registered.uri, resource, scope } }
+      data: { user: req.user!.id, client: registered.id, redirect: registered.uri, resource, scope, permissions } }
     await writeRecord(req.payload, grant)
     const code = randomToken()
     await writeRecord(req.payload, { key: tokenKey(req.payload, code), kind: 'code', expiresAt: expires(300),
@@ -246,6 +259,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     const eligible = await session(req).catch(() => false)
     return json({ resource, access: options.access ?? 'read-only', eligible, grants: grants.map(g => ({
       clientName: new URL(String(g.data.redirect)).hostname, scope: String(g.data.scope),
+      // Current level: the site's access setting may have dropped write since consent.
+      summary: summarize(g.data.permissions as KeyScopes | undefined, levelOf(scopes(String(g.data.scope))), catalog),
       consent: signed(req.payload, { user: req.user!.id, grant: g.key, expires: Date.now() + 600_000 }),
     })) })
   })
@@ -270,8 +285,10 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
       const user = await userFor(req, grant)
       const scope = scopes(String(record.data.scope))
       if (!scope) return false
+      // Grants store what the user picked at consent; older grants have no list and get the whole level.
+      const stored = grant.data.permissions as KeyScopes | undefined
       req.user = { ...user, _strategy: 'mcp-toolkit-oauth', _mcpKey: { keyId: grant.id, keyPrefix: null,
-        scopes: { preset: scope.split(' ').includes(WRITE) ? 'editor' : 'read-only' } } } as PayloadRequest['user']
+        scopes: stored ? clampScopes(stored, levelOf(scope)) : { preset: levelOf(scope) } } } as PayloadRequest['user']
       return true
     } catch (error) {
       if (!(error instanceof OAuthError)) req.payload.logger.error({ event: 'mcp.oauth.authentication_failed' }, '[payload-mcp-toolkit] OAuth authentication failed')

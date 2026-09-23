@@ -139,12 +139,12 @@ export function assertScopeAllows(
   }
 
   if (scopes.tools?.deny?.includes(toolName)) {
-    return { allowed: false, reason: `Tool "${toolName}" is denied for this API key.` }
+    return { allowed: false, reason: `Tool "${toolName}" is denied for this API key or connection.` }
   }
   if (scopes.tools?.allow && !scopes.tools.allow.includes(toolName)) {
     return {
       allowed: false,
-      reason: `Tool "${toolName}" is not in the allow-list for this API key.`,
+      reason: `Tool "${toolName}" is not in the allow-list for this API key or connection.`,
     }
   }
 
@@ -224,13 +224,13 @@ function checkResource(
     if (!override) {
       return {
         allowed: false,
-        reason: `${policy.Label} "${resource}" is not in this API key's allowed ${policy.scopeAxis}.`,
+        reason: `${policy.Label} "${resource}" is not in the allowed ${policy.scopeAxis} for this API key or connection.`,
       }
     }
     if (!override.includes(action as never)) {
       return {
         allowed: false,
-        reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted by this API key's scope.`,
+        reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted for this API key or connection.`,
       }
     }
     return { allowed: true }
@@ -242,14 +242,14 @@ function checkResource(
     // intent.
     return {
       allowed: false,
-      reason: `Tool "${toolName}" requires an explicit ${policy.label} scope or preset on this API key.`,
+      reason: `Tool "${toolName}" requires an explicit ${policy.label} scope or preset on this API key or connection.`,
     }
   }
 
   if (!presetActions.includes(action)) {
     return {
       allowed: false,
-      reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted by this API key's preset.`,
+      reason: `Action "${action}" on ${policy.label} "${resource}" is not permitted by the preset of this API key or connection.`,
     }
   }
   return { allowed: true }
@@ -279,7 +279,7 @@ function checkAccount(
     if (action && !presetActions.includes(action)) {
       return {
         allowed: false,
-        reason: `Action "${action}" is not permitted by this API key's preset.`,
+        reason: `Action "${action}" is not permitted by the preset of this API key or connection.`,
       }
     }
     return { allowed: true }

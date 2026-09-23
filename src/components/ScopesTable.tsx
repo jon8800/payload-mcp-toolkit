@@ -20,6 +20,18 @@ interface RowValue {
 }
 type MatrixValue = RowValue[]
 
+export interface ScopesMatrixProps {
+  /** Rows in the stored `{ slug, actions }[]` shape. */
+  value: MatrixValue | null | undefined
+  onChange: (rows: MatrixValue) => void
+  /** Table id; unique on the page. */
+  id: string
+  items: string[]
+  actions: string[]
+  actionLabels: Record<string, string>
+  itemHeader: string
+}
+
 export interface ScopesTableProps {
   path: string
   /** Slugs to render as rows. */
@@ -89,14 +101,21 @@ const headerCellStyle: React.CSSProperties = {
   fontWeight: 600,
 }
 
+// The matrix shows row names and column headers visually; this gives each checkbox a spoken name too.
+const hiddenStyle: React.CSSProperties = {
+  position: 'absolute', width: 1, height: 1, margin: -1, padding: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+}
+const hiddenLabel = (htmlFor: string, text: string) => <label htmlFor={htmlFor} style={hiddenStyle}>{text}</label>
+
 const labelCellStyle: React.CSSProperties = {
   textAlign: 'left',
   padding: '0.5rem 0.75rem',
   verticalAlign: 'middle',
 }
 
-export function ScopesTable(props: ScopesTableProps): React.ReactElement {
-  const { value, setValue } = useField<MatrixValue>({ path: props.path, hasRows: false })
+/** The items × actions checkbox table without form binding. The OAuth consent screen uses it too. */
+export function ScopesMatrix(props: ScopesMatrixProps): React.ReactElement {
+  const { value, onChange: setValue } = props
   const allowedActionsSet = React.useMemo(() => new Set(props.actions), [props.actions])
 
   const map = React.useMemo(
@@ -164,33 +183,9 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
       for (const slug of props.items) m.set(slug, checked ? new Set(props.actions) : new Set())
     })
 
-  if (props.items.length === 0) {
-    return (
-      <div className="field-type" style={{ padding: '0.5rem 0' }}>
-        <label className="field-label">{props.title}</label>
-        <p style={{ color: 'var(--theme-elevation-500)', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
-          {props.emptyMessage}
-        </p>
-      </div>
-    )
-  }
-
   return (
-    <div className="field-type" style={{ padding: '0.5rem 0' }}>
-      <label className="field-label" htmlFor={`${props.path}-matrix`}>
-        {props.title}
-      </label>
-      <p
-        style={{
-          color: 'var(--theme-elevation-500)',
-          fontSize: '0.85rem',
-          margin: '0.25rem 0 0.75rem',
-        }}
-      >
-        {props.description}
-      </p>
       <table
-        id={`${props.path}-matrix`}
+        id={props.id}
         style={{
           width: '100%',
           borderCollapse: 'collapse',
@@ -227,6 +222,8 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
                   <span>{props.actionLabels[action] ?? action}</span>
                   <CheckboxInput
                     checked={isColumnFull(action)}
+                    id={`${props.id}-col-${action}`}
+                    Label={hiddenLabel(`${props.id}-col-${action}`, `${props.actionLabels[action] ?? action}: all`)}
                     partialChecked={isColumnPartial(action) && !isColumnFull(action)}
                     onToggle={(e) => toggleColumn(action, e.currentTarget.checked)}
                   />
@@ -255,6 +252,8 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <CheckboxInput
                       checked={isRowFull(slug)}
+                      id={`${props.id}-row-${idx}`}
+                      Label={hiddenLabel(`${props.id}-row-${idx}`, `${niceName}: all actions`)}
                       partialChecked={isRowPartial(slug) && !isRowFull(slug)}
                       onToggle={(e) => toggleRow(slug, e.currentTarget.checked)}
                     />
@@ -283,6 +282,8 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
                   >
                     <CheckboxInput
                       checked={isCellChecked(slug, action)}
+                      id={`${props.id}-row-${idx}-${action}`}
+                      Label={hiddenLabel(`${props.id}-row-${idx}-${action}`, `${niceName}: ${props.actionLabels[action] ?? action}`)}
                       onToggle={(e) => toggleCell(slug, action, e.currentTarget.checked)}
                     />
                   </td>
@@ -292,6 +293,46 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
           })}
         </tbody>
       </table>
+  )
+}
+
+export function ScopesTable(props: ScopesTableProps): React.ReactElement {
+  const { value, setValue } = useField<MatrixValue>({ path: props.path, hasRows: false })
+
+  if (props.items.length === 0) {
+    return (
+      <div className="field-type" style={{ padding: '0.5rem 0' }}>
+        <label className="field-label">{props.title}</label>
+        <p style={{ color: 'var(--theme-elevation-500)', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
+          {props.emptyMessage}
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="field-type" style={{ padding: '0.5rem 0' }}>
+      <label className="field-label" htmlFor={`${props.path}-matrix`}>
+        {props.title}
+      </label>
+      <p
+        style={{
+          color: 'var(--theme-elevation-500)',
+          fontSize: '0.85rem',
+          margin: '0.25rem 0 0.75rem',
+        }}
+      >
+        {props.description}
+      </p>
+      <ScopesMatrix
+        id={`${props.path}-matrix`}
+        value={value}
+        onChange={setValue}
+        items={props.items}
+        actions={props.actions}
+        actionLabels={props.actionLabels}
+        itemHeader={props.itemHeader}
+      />
     </div>
   )
 }

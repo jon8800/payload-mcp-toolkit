@@ -6,8 +6,7 @@ import {
   errorMessage,
   getDocDisplayName,
   stampMcpContext,
-  textResponse,
-} from './_helpers'
+  textResponse, populateDepth } from './_helpers'
 
 const MEDIA_SLUG = 'media'
 
@@ -125,6 +124,7 @@ export function createCreateDocumentTool(
 
       try {
         const doc = await req.payload.create({
+          depth: populateDepth(req),
           collection: collection as any,
           data: data as any,
           draft: asDraft,

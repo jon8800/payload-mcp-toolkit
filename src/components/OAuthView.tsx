@@ -2,11 +2,14 @@
 
 import React, { useEffect, useState } from 'react'
 import { Banner, Button, Gutter } from '@payloadcms/ui'
+import type { Catalog } from '../oauth-permissions'
 import { agentInstructions } from './agentInstructions'
+import { ConsentPermissions } from './ConsentPermissions'
 import './oauth.css'
 
-type Consent = { consent: string; clientName: string; account: string; scope: string }
-type Connections = { resource: string; access: 'read-only' | 'editor'; eligible: boolean; grants: Omit<Consent, 'account'>[] }
+type Consent = { consent: string; clientName: string; account: string; scope: string; catalog: Catalog }
+type Grant = { consent: string; clientName: string; scope: string; summary: string }
+type Connections = { resource: string; access: 'read-only' | 'editor'; eligible: boolean; grants: Grant[] }
 
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [status, setStatus] = useState('')
@@ -30,6 +33,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
   const [data, setData] = useState<Consent | Connections | null>(null)
   const [error, setError] = useState('')
+  const [nothingPicked, setNothingPicked] = useState(false)
   const endpoint = `/api/mcp/oauth/${mode}`
 
   useEffect(() => {
@@ -71,13 +75,23 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
             <p><strong>{approval.clientName}</strong> is requesting access to your website account.</p>
             <dl className="mcp-oauth__details">
               <dt>Signed in as</dt><dd>{approval.account}</dd>
-              <dt>Permissions</dt><dd>{approval.scope.split(' ').includes('mcp:write') ? 'Read content. Create and update collection entries. Global settings remain read-only.' : 'Read content.'} Your website permissions still apply. Deleting content is not allowed.</dd>
+              <dt>Permissions</dt><dd>What you choose below. Your website permissions still apply. Deleting content and changing global settings are not allowed.</dd>
               <dt>Duration</dt><dd>Up to 30 days. You can disconnect at any time.</dd>
             </dl>
-            <form action={endpoint} method="post" className="mcp-oauth__actions">
+            {/* Enter on a checkbox would submit the form through its first button, Allow access. */}
+            <form action={endpoint} method="post" onKeyDown={e => {
+              if (e.key === 'Enter' && (e.target as HTMLElement).matches('input[type=checkbox]')) e.preventDefault()
+            }}>
               <input type="hidden" name="consent" value={approval.consent} />
-              <Button type="submit" margin={false} extraButtonProps={{ name: 'decision', value: 'allow' }}>Allow access</Button>
-              <Button type="submit" buttonStyle="secondary" margin={false} extraButtonProps={{ name: 'decision', value: 'deny' }}>Cancel</Button>
+              <ConsentPermissions
+                catalog={approval.catalog}
+                max={approval.scope.split(' ').includes('mcp:write') ? 'editor' : 'read-only'}
+                onEmptyChange={setNothingPicked}
+              />
+              <div className="mcp-oauth__actions">
+                <Button type="submit" margin={false} disabled={nothingPicked} extraButtonProps={{ name: 'decision', value: 'allow' }}>Allow access</Button>
+                <Button type="submit" buttonStyle="secondary" margin={false} extraButtonProps={{ name: 'decision', value: 'deny' }}>Cancel</Button>
+              </div>
             </form>
           </>
         )}
@@ -101,7 +115,7 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
             <h2>Connected apps</h2>
             {connections.grants.length ? connections.grants.map(grant => (
               <div className="mcp-oauth__connection" key={grant.consent}>
-                <div><strong>{grant.clientName}</strong><p>{grant.scope.split(' ').includes('mcp:write') ? 'Read, create and update content' : 'Read content'}</p></div>
+                <div><strong>{grant.clientName}</strong><p>{grant.summary}</p></div>
                 <form action={endpoint} method="post">
                   <input type="hidden" name="consent" value={grant.consent} />
                   <Button type="submit" buttonStyle="secondary" margin={false}>Disconnect</Button>

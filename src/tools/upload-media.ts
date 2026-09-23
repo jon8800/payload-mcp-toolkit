@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import { validateAndFetchUrl } from '../url-validator'
-import { errorMessage, stampMcpContext, textResponse } from './_helpers'
+import { errorMessage, stampMcpContext, textResponse, populateDepth } from './_helpers'
 
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -79,6 +79,7 @@ export function createUploadMediaTool(options?: {
 
       try {
         const doc = await req.payload.create({
+          depth: populateDepth(req),
           collection: mediaSlug as any,
           data: { alt } as any,
           file: {

@@ -5,8 +5,7 @@ import {
   errorMessage,
   getDocDisplayName,
   stampMcpContext,
-  textResponse,
-} from './_helpers'
+  textResponse, populateDepth } from './_helpers'
 
 /**
  * schedulePublish stamps a future publish time on a draft document.
@@ -105,6 +104,7 @@ function buildTool(schedulableSlugs: string[]) {
 
       try {
         const updated = await req.payload.update({
+          depth: populateDepth(req),
           collection: collection as any,
           id: documentId,
           data: {

@@ -161,6 +161,25 @@ export function stampMcpContext(req: PayloadRequest): void {
   req.context = { ...req.context, source: 'mcp' }
 }
 
+/** Set on req.context by the registry when the caller's scopes list specific collections or globals. */
+export const LIMITED_SCOPE = 'mcpLimitedScope'
+
+/**
+ * Relationship depth for a Payload call whose result goes back to the client. A key or connection
+ * limited to some collections or globals gets depth 0, so linked entries from collections it may
+ * not read come back as IDs, not full documents. Otherwise the requested depth (or Payload's default).
+ */
+export function populateDepth(req: PayloadRequest, requested?: number): number | undefined {
+  return req.context?.[LIMITED_SCOPE] ? 0 : requested
+}
+
+/** True when a `where` filter uses a dotted path, which can reach into linked entries. */
+export function hasDottedPath(where: unknown): boolean {
+  if (!where || typeof where !== 'object') return false
+  return Object.entries(where).some(([key, value]) =>
+    key.includes('.') || (Array.isArray(value) && value.some(hasDottedPath)))
+}
+
 export function getDocDisplayName(doc: unknown, fallback: string): string {
   const d = doc as Record<string, unknown> | null | undefined
   return (
