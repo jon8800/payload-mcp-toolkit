@@ -42,7 +42,7 @@ The plugin adds an admin dashboard banner pointing to `/api/mcp/oauth/connection
 
 The setup page shows the connector URL and agent instructions, each with a Copy button. Users paste the instructions into their AI app, for example as Claude project instructions. The instructions tell the assistant how to connect, what the site's access level allows, and to ask before each change. Accounts that fail `canAuthorize` see a notice instead of the setup steps. Users can also disconnect their grants there. You can link to this page from your own dashboard too. Pasted instructions do not install a connector: the user still adds the connector and approves access.
 
-ChatGPT is not supported yet. Its connector needs RFC 9207 issuer identification or a per-connection callback URL, and this release supports neither.
+ChatGPT connects through the same flow. The server returns `iss` in every authorization redirect (RFC 9207) and advertises `authorization_response_iss_parameter_supported`. ChatGPT then uses its fixed callback, `https://chatgpt.com/connector_platform_oauth_redirect`. Without this, ChatGPT uses a different callback for every connector, which an exact allowlist cannot accept. ChatGPT custom connectors work on the web only and need Developer mode. OpenAI's docs differ on which plans allow write actions.
 
 Keep the consent view protected against framing. Add these headers to the host's existing Next.js headers configuration, using your configured admin path:
 
@@ -57,9 +57,9 @@ async headers() {
 
 The authenticated data endpoints return JSON only with `Accept: application/json` and never cache consent data. Browser navigation redirects into the admin view. Approval and revocation still use the server's signed consent and origin checks.
 
-If your existing policy restricts `form-action`, allow your trusted OAuth callback origins too. Browsers can enforce that directive on the approval redirect back to Claude.
+If your existing policy restricts `form-action`, allow your trusted OAuth callback origins too. Browsers can enforce that directive on the approval redirect back to Claude or ChatGPT.
 
-## Claude Desktop trial
+## Claude and ChatGPT trial
 
 1. Deploy the host with the plugin, migration, and discovery rewrites.
 2. Open `https://YOUR-SITE/.well-known/oauth-authorization-server`. Confirm it returns JSON with your HTTPS issuer.
@@ -69,14 +69,17 @@ If your existing policy restricts `form-action`, allow your trusted OAuth callba
 6. Ask: “List the content I can access. Do not change anything yet.”
 7. Open `/api/mcp/oauth/connections`, disconnect Claude, and confirm another tool request requires authorization again.
 
-Claude's remote connector runs through its cloud infrastructure. A localhost URL alone is insufficient for this trial. Use a deployed HTTPS test host. The dev app demonstrates the routes and sign-in flow locally.
+For ChatGPT, open chatgpt.com in a browser and turn on **Developer mode** in Settings (in a Business, Enterprise or Edu workspace, an admin must allow it first). Create an app with the URL from step 4 and OAuth authentication, leaving any client ID and secret empty. Then continue from step 5. ChatGPT asks before each write action.
 
-The default trusted callbacks are `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback`. Dynamic registration accepts one exact trusted callback per public client. Client IDs are stable per callback and installation, with no client secret. To support another client, provide its exact callback in `oauth.redirectURIs`. Wildcards and arbitrary client-metadata URL fetching are not supported.
+Both connectors run through their vendor's cloud. A localhost URL alone is insufficient for this trial. Use a deployed HTTPS test host. The dev app demonstrates the routes and sign-in flow locally.
+
+The default trusted callbacks are `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback` and `https://chatgpt.com/connector_platform_oauth_redirect`. Dynamic registration accepts one exact trusted callback per public client. Client IDs are stable per callback and installation, with no client secret. To support another client, provide its exact callback in `oauth.redirectURIs`. Wildcards and arbitrary client-metadata URL fetching are not supported.
 
 ## Permissions and lifecycle
 
 - `mcp:read` uses the existing read-only preset.
 - `mcp:write` is available when `access: 'editor'`. It permits collection reads, creates and updates. Globals remain read-only. Delete remains denied. The MCP `401` challenge then asks for `mcp:read mcp:write`, so clients request write access on first connection.
+- Requested scopes the site does not grant (for example `offline_access`, `openid`, or `mcp:write` on a read-only site) are dropped, never granted. The consent screen and token response show the scope actually granted.
 - Existing Payload access controls and plugin exclusions still apply. Custom tools must enforce Payload access with `overrideAccess: false`.
 - Authorization codes expire after five minutes and require PKCE S256. Approval forms expire after ten minutes.
 - Access tokens expire after one hour. Grants and rotating refresh tokens expire after 30 days. Reusing a consumed code or refresh token revokes its grant.

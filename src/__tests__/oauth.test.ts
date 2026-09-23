@@ -75,6 +75,7 @@ function setup(options: Partial<OAuthOptions> = {}, configOverrides: Partial<Con
     const location = new URL(response.headers.get('location')!)
     expect(location.origin + location.pathname).toBe(callback)
     expect(location.searchParams.get('state')).toBe('return-state')
+    expect(location.searchParams.get('iss')).toBe(origin)
     return location.searchParams.get('code')!
   }
   function exchange(client: string, code: string, overrides: Record<string, string> = {}) {
@@ -103,7 +104,8 @@ describe('OAuth website authorization', () => {
   it('advertises discovery, PKCE, public registration, expiry and read-only defaults', async () => {
     const f = setup()
     const metadata = await (await f.call('/metadata')).json()
-    expect(metadata).toMatchObject({ issuer: origin, code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none'], scopes_supported: ['mcp:read'] })
+    expect(metadata).toMatchObject({ issuer: origin, code_challenge_methods_supported: ['S256'], token_endpoint_auth_methods_supported: ['none'], scopes_supported: ['mcp:read'],
+      authorization_response_iss_parameter_supported: true })
     expect(await (await f.call('/resource')).json()).toMatchObject({ resource, authorization_servers: [origin] })
     expect(f.oauth.metadataURL).toBe(`${origin}/api/mcp/oauth/resource`)
     expect(f.oauth.scope).toBe('mcp:read')
@@ -123,6 +125,15 @@ describe('OAuth website authorization', () => {
     expect(f.records.size).toBe(0)
   })
 
+  it('trusts the ChatGPT connector callback by default and names it on the consent screen', async () => {
+    const f = setup()
+    const chatgpt = 'https://chatgpt.com/connector_platform_oauth_redirect'
+    const client = await f.register(chatgpt)
+    expect(client).not.toBe(await f.register())
+    const response = await f.call(`/authorize?${f.authParams(client, { redirect_uri: chatgpt })}`, 'GET', undefined, account, { accept: 'application/json' })
+    expect((await response.json()).clientName).toBe('chatgpt.com')
+  })
+
   it.each([
     { redirect_uris: ['https://evil.example/callback'] },
     { redirect_uris: [callback, 'https://evil.example/callback'] },
@@ -139,13 +150,42 @@ describe('OAuth website authorization', () => {
   it.each([
     { redirect_uri: 'https://evil.example/callback' }, { client_id: 'unknown' },
     { resource: 'https://other.example/api/mcp' }, { code_challenge_method: 'plain' },
-    { code_challenge: 'short' }, { response_type: 'token' }, { scope: 'mcp:write' },
+    { code_challenge: 'short' }, { response_type: 'token' },
   ])('rejects invalid authorization parameters before consent: %j', async params => {
     const f = setup()
     const response = await f.call(`/authorize?${f.authParams(await f.register(), params)}`)
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(response.headers.get('location')).toBeNull()
     expect(f.records.size).toBe(0)
+  })
+
+  it.each([
+    ['mcp:write', {}, 'mcp:read'],
+    ['mcp:read offline_access openid mcp:read', {}, 'mcp:read'],
+    ['openid email', { access: 'editor' as const }, 'mcp:read'],
+    ['offline_access mcp:write mcp:read', { access: 'editor' as const }, 'mcp:read mcp:write'],
+  ])('grants only supported scopes when %s is requested', async (scope, options, granted) => {
+    const f = setup(options)
+    const response = await f.call(`/authorize?${f.authParams(await f.register(), { scope })}`, 'GET', undefined, account, { accept: 'application/json' })
+    expect((await response.json()).scope).toBe(granted)
+  })
+
+  it('keeps the stored scope when a refresh asks only for scopes the site does not grant', async () => {
+    const f = setup({ access: 'editor' })
+    const tokens = await f.connected({ scope: 'mcp:read mcp:write' })
+    const refreshed = await (await f.refresh(tokens.client, tokens.refresh_token, { scope: 'offline_access' })).json()
+    expect(refreshed.scope).toBe('mcp:read mcp:write')
+    expect((await (await f.refresh(tokens.client, refreshed.refresh_token)).json()).scope).toBe('mcp:read mcp:write')
+  })
+
+  it('refreshes without a resource parameter but rejects a different one', async () => {
+    const f = setup()
+    const tokens = await f.connected()
+    const refreshed = await f.call('/token', 'POST', new URLSearchParams({ grant_type: 'refresh_token', client_id: tokens.client,
+      refresh_token: tokens.refresh_token }).toString(), null)
+    expect(refreshed.status).toBe(200)
+    const next = await refreshed.json()
+    expect((await f.refresh(tokens.client, next.refresh_token, { resource: 'https://evil.example/api/mcp' })).status).toBe(400)
   })
 
   it('rejects duplicate authorization and token parameters', async () => {
@@ -252,6 +292,7 @@ describe('OAuth website authorization', () => {
     const location = new URL(response.headers.get('location')!)
     expect(location.searchParams.get('error')).toBe('access_denied')
     expect(location.searchParams.get('state')).toBe('return-state')
+    expect(location.searchParams.get('iss')).toBe(origin)
     expect(f.records.size).toBe(0)
   })
 

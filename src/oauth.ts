@@ -8,14 +8,16 @@ const READ = 'mcp:read'
 const WRITE = 'mcp:write'
 const ACCESS_SECONDS = 3600
 const GRANT_SECONDS = 30 * 24 * 3600
-const CLAUDE_REDIRECTS = ['https://claude.ai/api/mcp/auth_callback', 'https://claude.com/api/mcp/auth_callback']
+// ChatGPT uses this fixed callback only when the server supports RFC 9207 (`iss` in the authorization response).
+const DEFAULT_REDIRECTS = ['https://claude.ai/api/mcp/auth_callback', 'https://claude.com/api/mcp/auth_callback',
+  'https://chatgpt.com/connector_platform_oauth_redirect']
 
 export interface OAuthOptions {
   /** Required site policy. Rechecked at consent, refresh and every MCP request. */
   canAuthorize: (req: PayloadRequest) => boolean | Promise<boolean>
   /** Defaults to Payload admin login. Return a same-origin login URL that returns to returnTo. */
   loginURL?: (returnTo: string) => string
-  /** Exact trusted callbacks; defaults to Claude's web/Desktop remote connector callbacks. */
+  /** Exact trusted callbacks; defaults to the Claude (web/Desktop) and ChatGPT remote connector callbacks. */
   redirectURIs?: string[]
   /** Read-only by default. Editor enables create/update, still subject to Payload access controls. */
   access?: 'read-only' | 'editor'
@@ -53,7 +55,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   const resource = `${issuer}/api/mcp`
   const metadataURL = `${baseURL}/resource`
   const adminURL = `${issuer}${config.routes?.admin ?? '/admin'}`
-  const redirects = options.redirectURIs ?? CLAUDE_REDIRECTS
+  const redirects = options.redirectURIs ?? DEFAULT_REDIRECTS
   if (!redirects.length || redirects.length > 20) throw new Error('OAuth requires 1–20 exact redirectURIs.')
   for (const value of redirects) {
     const url = new URL(value)
@@ -72,10 +74,11 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     if (!result) throw new OAuthError('invalid_client', 401)
     return result
   }
+  // Scopes this site does not grant (offline_access, openid, write on a read-only site) are dropped, never granted.
+  // RFC 6749 §3.3 lets the server narrow a request, and some clients (ChatGPT) add scopes of their own.
+  // Returns '' when nothing supported remains; each caller picks its own fallback.
   function scopes(value: string | null): string {
-    const list = value ? value.split(' ') : [READ]
-    if (!list.length || list.some(s => !supportedScopes.includes(s)) || new Set(list).size !== list.length) throw new OAuthError('invalid_scope')
-    return list.sort().join(' ')
+    return [...new Set(value?.split(' ').filter(s => supportedScopes.includes(s)))].sort().join(' ')
   }
   function signed(payload: Payload, value: Record<string, unknown>): string {
     const body = Buffer.from(JSON.stringify(value)).toString('base64url')
@@ -142,7 +145,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   endpoint('/metadata', 'get', () => json({ issuer, authorization_endpoint: `${baseURL}/authorize`, token_endpoint: `${baseURL}/token`,
     registration_endpoint: `${baseURL}/register`, revocation_endpoint: `${baseURL}/revoke`, response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'],
-    revocation_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: supportedScopes }))
+    revocation_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: supportedScopes,
+    authorization_response_iss_parameter_supported: true }))
   endpoint('/register', 'post', async req => {
     if (!req.text || !req.headers.get('content-type')?.startsWith('application/json')) throw new OAuthError('invalid_client_metadata')
     const text = await req.text()
@@ -165,7 +169,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     if (params.get('redirect_uri') !== registered.uri || params.get('response_type') !== 'code' ||
       params.get('resource') !== resource || params.get('code_challenge_method') !== 'S256' ||
       !/^[A-Za-z0-9_-]{43}$/.test(params.get('code_challenge') ?? '') || (params.get('state')?.length ?? 0) > 2048) throw new OAuthError('invalid_request')
-    const scope = scopes(params.get('scope'))
+    const scope = scopes(params.get('scope')) || READ
     if (!req.user) return login(req)
     if (!await session(req)) throw new OAuthError('access_denied', 403)
     const consent = signed(req.payload, { user: req.user.id, client: registered.id, redirect: registered.uri,
@@ -182,11 +186,12 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     if (consent.redirect !== registered.uri || consent.resource !== resource) throw new OAuthError('invalid_request')
     const callback = new URL(registered.uri)
     if (typeof consent.state === 'string') callback.searchParams.set('state', consent.state)
+    callback.searchParams.set('iss', issuer)
     if (params.get('decision') === 'deny') { callback.searchParams.set('error', 'access_denied'); return redirect(callback.href) }
     if (params.get('decision') !== 'allow') throw new OAuthError('invalid_request')
     const used: OAuthRecord = { id: '', key: tokenKey(req.payload, String(consent.nonce)), kind: 'code', expiresAt: new Date(Number(consent.expires)).toISOString(), data: {} }
     if (!await consumeRecord(req.payload, used)) throw new OAuthError('invalid_request')
-    const scope = scopes(String(consent.scope))
+    const scope = scopes(String(consent.scope)) || READ
     const grant = { key: `grant:${randomToken()}`, kind: 'grant' as const, expiresAt: expires(GRANT_SECONDS), owner: String(req.user!.id),
       data: { user: req.user!.id, client: registered.id, redirect: registered.uri, resource, scope } }
     await writeRecord(req.payload, grant)
@@ -202,7 +207,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     if (req.headers.has('authorization') || params.has('client_secret')) throw new OAuthError('invalid_client', 401)
     const type = params.get('grant_type')
     if (type !== 'authorization_code' && type !== 'refresh_token') throw new OAuthError('unsupported_grant_type')
-    if (params.get('resource') !== resource) throw new OAuthError('invalid_target')
+    // RFC 8707 makes `resource` optional here (some clients omit it on refresh); codes and refresh tokens are already bound to it.
+    if (params.has('resource') && params.get('resource') !== resource) throw new OAuthError('invalid_target')
     const raw = params.get(type === 'authorization_code' ? 'code' : 'refresh_token') ?? ''
     const record = await readRecord(req.payload, tokenKey(req.payload, raw))
     if (!isLive(record) || record.kind !== (type === 'authorization_code' ? 'code' : 'refresh') || record.data.client !== registered.id || record.data.resource !== resource) throw new OAuthError('invalid_grant')
@@ -213,7 +219,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
       if (params.get('redirect_uri') !== record.data.redirect || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ||
         createHash('sha256').update(verifier).digest('base64url') !== record.data.challenge) throw new OAuthError('invalid_grant')
     }
-    const scope = scopes(params.get('scope') ?? String(record.data.scope))
+    // A scope list with nothing this site grants counts as omitted (RFC 6749 §6), so it keeps the stored scope.
+    const scope = scopes(params.get('scope')) || String(record.data.scope)
     if (scope.split(' ').some(s => !String(record.data.scope).split(' ').includes(s))) throw new OAuthError('invalid_scope')
     if (!await consumeRecord(req.payload, record)) { await revokeGrant(req.payload, grant); throw new OAuthError('invalid_grant') }
     return issue(req, grant, scope)
@@ -262,6 +269,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
       const grant = await grantFor(req.payload, record)
       const user = await userFor(req, grant)
       const scope = scopes(String(record.data.scope))
+      if (!scope) return false
       req.user = { ...user, _strategy: 'mcp-toolkit-oauth', _mcpKey: { keyId: grant.id, keyPrefix: null,
         scopes: { preset: scope.split(' ').includes(WRITE) ? 'editor' : 'read-only' } } } as PayloadRequest['user']
       return true

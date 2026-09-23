@@ -19,7 +19,9 @@ export function agentInstructions(resource: string, access: 'read-only' | 'edito
     'Connection',
     `- Connector URL: ${resource}`,
     '- Sign-in: OAuth with my website account. No API key or client secret is necessary.',
-    '- If you cannot see tools from this connector, stop. Tell me to add a custom connector with the URL above, sign in and approve access. In Claude: Settings > Connectors > Add custom connector.',
+    '- If you cannot see tools from this connector, stop. Tell me to add a custom connector with the URL above, sign in and approve access.',
+    '  - Claude: Settings > Connectors > Add custom connector.',
+    '  - ChatGPT (web): turn on Developer mode in Settings, then create an app with this URL and OAuth sign-in.',
     '',
     'Access',
     editor

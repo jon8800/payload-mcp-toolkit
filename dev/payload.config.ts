@@ -47,6 +47,7 @@ export default buildConfig({
         redirectURIs: [
           'https://claude.ai/api/mcp/auth_callback',
           'https://claude.com/api/mcp/auth_callback',
+          'https://chatgpt.com/connector_platform_oauth_redirect',
           `${process.env.SITE_URL || 'http://localhost:3000'}/`,
         ],
       },

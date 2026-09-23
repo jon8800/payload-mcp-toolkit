@@ -45,7 +45,7 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
           return
         }
         if (!response.ok) {
-          setError(response.status === 403 ? 'Your account cannot authorize this connection.' : 'This request could not be loaded. Start the connection again from Claude.')
+          setError(response.status === 403 ? 'Your account cannot authorize this connection.' : 'This request could not be loaded. Start the connection again from your AI app.')
           return
         }
         setData(await response.json())
@@ -85,7 +85,11 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
           <>
             {connections.eligible ? (
               <>
-                <p>In Claude Desktop, open Settings → Connectors → Add custom connector. Paste this URL, then sign in and approve access.</p>
+                <p>Add this URL as a custom connector in your AI app. Then sign in and approve access.</p>
+                <ul>
+                  <li><strong>Claude:</strong> Settings → Connectors → Add custom connector.</li>
+                  <li><strong>ChatGPT (web):</strong> turn on Developer mode in Settings, then create an app with this URL and OAuth sign-in.</li>
+                </ul>
                 <code className="mcp-oauth__url">{connections.resource}</code>
                 <CopyButton text={connections.resource} label="Copy URL" />
                 <h2>Agent instructions</h2>

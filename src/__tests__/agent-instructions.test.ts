@@ -9,6 +9,8 @@ describe('agentInstructions', () => {
     expect(text).toContain('content of app.example.com')
     expect(text).toContain(`Connector URL: ${resource}`)
     expect(text).toContain('No API key or client secret')
+    expect(text).toContain('Claude: Settings > Connectors')
+    expect(text).toContain('ChatGPT (web): turn on Developer mode')
     expect(text).toContain(`${resource}/oauth/connections`)
   })
 
