@@ -308,9 +308,10 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
               path: 'payload-mcp-toolkit/client#OAuthView', clientProps: { mode: 'connections' },
             } },
           },
-          beforeDashboard: [
-            ...(incomingConfig.admin?.components?.beforeDashboard ?? []),
-            'payload-mcp-toolkit/client#OAuthConnectBanner',
+          // Hosts with a custom Nav render <AgentConnectPill /> themselves; this slot is Payload's default nav.
+          afterNavLinks: [
+            ...(incomingConfig.admin?.components?.afterNavLinks ?? []),
+            'payload-mcp-toolkit/client#AgentConnectPill',
           ],
         },
       } } : {}),

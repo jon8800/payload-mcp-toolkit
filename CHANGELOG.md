@@ -11,6 +11,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 - Required host eligibility policy, rechecked on every OAuth-authenticated MCP request. OAuth tokens do not authenticate ordinary Payload REST requests.
 - Private OAuth storage with database-enforced one-use tokens. Hosts must generate a migration and add root discovery rewrites before enabling it in production. See `docs/oauth.md`.
 - Consent and connection management use Payload admin views and UI components. They inherit the host theme, fonts and surface tokens. Hosts must regenerate the import map and configure the documented admin security headers.
+- A compact "Connect your AI agent" prompt in the admin sidebar copies the agent setup prompt in one click. It shows only to accounts that may connect and can be dismissed. Hosts with a custom `Nav` render `AgentConnectPill` themselves.
 - The connections page shows agent instructions with a Copy button. Users paste them into their AI app. They include the connector URL, the site's access level and safe working rules.
 - With `access: 'editor'`, the MCP `401` challenge asks for `mcp:read mcp:write`, so clients request write access on first connection.
 - ChatGPT support: authorization redirects carry `iss` (RFC 9207), metadata advertises it, and ChatGPT's fixed callback is trusted by default. Unsupported requested scopes are dropped instead of rejected. `resource` is optional on token requests but still checked when present.

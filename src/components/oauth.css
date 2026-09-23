@@ -33,6 +33,53 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.mcp-agent-pill {
+  display: flex;
+  align-items: stretch;
+  max-width: 100%;
+  margin: calc(var(--base) * .5) 0;
+  background: var(--theme-elevation-0);
+  border: 1px solid var(--theme-elevation-150);
+  border-radius: 999px;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+.mcp-agent-pill:hover { background: var(--theme-elevation-50); border-color: var(--theme-elevation-250); }
+.mcp-agent-pill button {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.mcp-agent-pill button:focus-visible { outline: var(--accessibility-outline); outline-offset: var(--accessibility-outline-offset); }
+.mcp-agent-pill__copy {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: calc(var(--base) * .35);
+  min-width: 0;
+  padding: calc(var(--base) * .35) calc(var(--base) * .2) calc(var(--base) * .35) calc(var(--base) * .6);
+  color: var(--theme-elevation-800) !important;
+  font-size: .8125rem !important;
+  line-height: 1.2;
+  border-radius: 999px 0 0 999px;
+}
+.mcp-agent-pill__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-agent-pill__mark { flex-shrink: 0; width: 14px; height: 14px; }
+.mcp-agent-pill__dismiss {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  padding: 0 calc(var(--base) * .3) 0 calc(var(--base) * .15);
+  color: var(--theme-elevation-400) !important;
+  border-radius: 0 999px 999px 0;
+}
+.mcp-agent-pill__dismiss:hover { color: var(--theme-elevation-800) !important; }
+.mcp-agent-pill__dismiss svg { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { .mcp-agent-pill { transition: none; } }
+
 .mcp-oauth__copy { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--base) * .5); margin: calc(var(--base) * .5) 0 var(--base); }
 .mcp-oauth__connection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--base); padding: var(--base) 0; border-top: 1px solid var(--theme-elevation-150); }
 .mcp-oauth__connection p { margin: 0; }
