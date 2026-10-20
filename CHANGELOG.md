@@ -4,6 +4,20 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0-next.0] - 2026-10-20
+
+### Changed
+- Payload 4.0.0-beta.3 only; requires Node >=24.15.0 and TypeScript >=6.0.3.
+- Admin controls and semantic CSS variables match the v4 admin.
+- SDK pinned to 1.26.0; the public toolkit API uses Zod ^3.25.76.
+- API keys and transient OAuth records disable version history and authorship.
+- Upstream MCP detection uses Payload v4 plugin metadata. Production minification no longer makes the toolkit reject itself.
+- Prereleases publish to `next`. Version tags must match package.json. `latest` remains on the Payload 3 release.
+
+### Fixed
+- OAuth handles authenticated user unions without widening its stored scope permissions.
+- SQLite integration fixtures explicitly request trusted access during synthetic user setup.
+
 ## [0.9.0] - 2026-09-24
 
 ### Added

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { definePlugin, type Config, type Plugin } from 'payload'
 import { assertNoUpstreamPlugin, assertNoSlugConflict } from '../conflict-detection'
 
 describe('assertNoUpstreamPlugin', () => {
@@ -7,18 +8,28 @@ describe('assertNoUpstreamPlugin', () => {
     expect(() => assertNoUpstreamPlugin([])).not.toThrow()
   })
 
-  it('throws when a plugin function is named mcpPlugin', () => {
-    function mcpPlugin() {}
-    expect(() => assertNoUpstreamPlugin([mcpPlugin as never])).toThrow(/standalone successor/)
+  it('rejects the upstream v4 definePlugin identity even when the function name changes', () => {
+    const upstream = definePlugin({ slug: '@payloadcms/plugin-mcp', order: 10, plugin: ({ config }) => config })()
+    Object.defineProperty(upstream, 'name', { value: 'a' })
+    upstream.toString = () => { throw new Error('Function source must not identify a plugin') }
+    expect(() => assertNoUpstreamPlugin([upstream])).toThrow(/standalone successor/)
   })
 
-  it('throws when a plugin closure references @payloadcms/plugin-mcp', () => {
-    const wrapper = function () {
-      // simulate the upstream plugin reference inside the closure
-      const _u = '@payloadcms/plugin-mcp'
-      return _u
-    }
-    expect(() => assertNoUpstreamPlugin([wrapper as never])).toThrow()
+  it('allows unrelated plugins that mention the upstream package', () => {
+    const wrapper = (config: Config) => ({ ...config, custom: { description: '@payloadcms/plugin-mcp' } })
+    expect(() => assertNoUpstreamPlugin([wrapper])).not.toThrow()
+  })
+
+  it('allows the toolkit collection literal after production inlining', () => {
+    const inlinedToolkit: Plugin = (config) => ({ ...config, collections: [
+      ...(config.collections ?? []), { slug: 'payload-mcp-api-keys', fields: [] },
+    ] })
+    expect(() => assertNoUpstreamPlugin([inlinedToolkit])).not.toThrow()
+  })
+
+  it('does not use a function name as package identity', () => {
+    function mcpPlugin(config: Config) { return config }
+    expect(() => assertNoUpstreamPlugin([mcpPlugin])).not.toThrow()
   })
 
   it('does not throw on unrelated plugin functions', () => {

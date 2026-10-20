@@ -16,5 +16,9 @@
   },
   "module": {
     "type": "es6"
-  }
+  },
+  "exclude": [
+    "(^|[/\\\\])(__tests__|fixtures)([/\\\\]|$)",
+    "\\.(test|spec)\\.tsx?$"
+  ]
 }

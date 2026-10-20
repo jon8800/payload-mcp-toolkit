@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { Config, Endpoint, Payload, PayloadRequest } from 'payload'
+import type { CollectionSlug, Config, Endpoint, Payload, PayloadRequest } from 'payload'
 import { extractBearerToken, hashKey, verifyHash } from './hash'
 import { clampScopes, permissionsFrom, summarize, type Catalog, type Choice, type Level } from './oauth-permissions'
 import { consumeRecord, isLive, readRecord, revokeGrant, tokenKey, writeRecord, OAUTH_COLLECTION, type OAuthRecord } from './oauth-store'
@@ -97,9 +97,10 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     return data
   }
   async function session(req: PayloadRequest): Promise<boolean> {
-    const user = req.user as Record<string, unknown> | null
-    if (!user || user.collection !== userCollection || user._mcpKey || req.headers.has('authorization') || user._verified === false ||
-      (typeof user.lockUntil === 'string' && Date.parse(user.lockUntil) > Date.now())) return false
+    const user = req.user
+    if (!user || user.collection !== userCollection || ('_mcpKey' in user && user._mcpKey) || req.headers.has('authorization') ||
+      ('_verified' in user && user._verified === false) ||
+      ('lockUntil' in user && typeof user.lockUntil === 'string' && Date.parse(user.lockUntil) > Date.now())) return false
     return (await options.canAuthorize(req)) === true
   }
   function login(req: PayloadRequest): Response {
@@ -117,13 +118,14 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     if (!isLive(grant) || grant.kind !== 'grant' || grant.data.resource !== resource) throw new OAuthError('invalid_grant')
     return grant
   }
-  async function userFor(req: PayloadRequest, grant: OAuthRecord): Promise<PayloadRequest['user']> {
+  async function userFor(req: PayloadRequest, grant: OAuthRecord): Promise<NonNullable<PayloadRequest['user']>> {
     const id = grant.data.user
     if (typeof id !== 'string' && typeof id !== 'number') throw new OAuthError('invalid_grant')
-    const result = await req.payload.find({ collection: userCollection, where: { id: { equals: id } }, limit: 1, depth: 0, overrideAccess: true })
+    const result = await req.payload.find({ collection: userCollection as CollectionSlug, where: { id: { equals: id } }, limit: 1, depth: 0, overrideAccess: true })
     const user = result.docs[0]
-    if (!user || (user._verified === false) || (typeof user.lockUntil === 'string' && Date.parse(user.lockUntil) > Date.now())) throw new OAuthError('invalid_grant')
-    const authenticated = { ...user, collection: userCollection } as PayloadRequest['user']
+    if (!user || ('_verified' in user && user._verified === false) ||
+      ('lockUntil' in user && typeof user.lockUntil === 'string' && Date.parse(user.lockUntil) > Date.now())) throw new OAuthError('invalid_grant')
+    const authenticated = { ...user, collection: userCollection } as NonNullable<PayloadRequest['user']>
     const policyReq = Object.assign(Object.create(Object.getPrototypeOf(req)), req, { user: authenticated }) as PayloadRequest
     if ((await options.canAuthorize(policyReq)) !== true) throw new OAuthError('invalid_grant')
     return authenticated
@@ -180,7 +182,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     const consent = signed(req.payload, { user: req.user.id, client: registered.id, redirect: registered.uri,
       challenge: params.get('code_challenge'), state: params.get('state'), scope, resource, expires: Date.now() + 600_000, nonce: randomToken() })
     if (!req.headers.get('accept')?.includes('application/json')) return redirect(`${adminURL}/mcp-authorize?${params}`)
-    return json({ consent, clientName: new URL(registered.uri).hostname, account: String(req.user.email ?? req.user.id), scope, catalog })
+    const account = 'email' in req.user ? req.user.email ?? req.user.id : req.user.id
+    return json({ consent, clientName: new URL(registered.uri).hostname, account: String(account), scope, catalog })
   })
   endpoint('/authorize', 'post', async req => {
     if (!await session(req)) throw new OAuthError('access_denied', 403)
@@ -251,9 +254,9 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   endpoint('/connections', 'get', async req => {
     if (!req.user) return login(req)
     // Revocation remains available even if the site's authorization policy has since removed access.
-    if (req.user.collection !== userCollection || req.headers.has('authorization') || (req.user as Record<string, unknown>)._mcpKey) throw new OAuthError('access_denied', 403)
+    if (req.user.collection !== userCollection || req.headers.has('authorization') || ('_mcpKey' in req.user && req.user._mcpKey)) throw new OAuthError('access_denied', 403)
     if (!req.headers.get('accept')?.includes('application/json')) return redirect(`${adminURL}/mcp-connections`)
-    const records = await req.payload.find({ collection: OAUTH_COLLECTION, where: { and: [{ kind: { equals: 'grant' } }, { owner: { equals: String(req.user.id) } }, { expiresAt: { greater_than: new Date().toISOString() } }] }, limit: 0, pagination: false, depth: 0, overrideAccess: true })
+    const records = await req.payload.find({ collection: OAUTH_COLLECTION as CollectionSlug, where: { and: [{ kind: { equals: 'grant' } }, { owner: { equals: String(req.user.id) } }, { expiresAt: { greater_than: new Date().toISOString() } }] }, limit: 0, pagination: false, depth: 0, overrideAccess: true })
     const grants = (records.docs as unknown as OAuthRecord[]).filter(g => String(g.data.user) === String(req.user!.id))
     // Setup steps show only to accounts that may connect; a failing policy must not block disconnecting.
     const eligible = await session(req).catch(() => false)
@@ -265,7 +268,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     })) })
   })
   endpoint('/connections', 'post', async req => {
-    if (!req.user || req.user.collection !== userCollection || req.headers.has('authorization') || (req.user as Record<string, unknown>)._mcpKey) throw new OAuthError('access_denied', 403)
+    if (!req.user || req.user.collection !== userCollection || req.headers.has('authorization') || ('_mcpKey' in req.user && req.user._mcpKey)) throw new OAuthError('access_denied', 403)
     const params = await parameters(req)
     const consent = verified(req.payload, params.get('consent') ?? '')
     csrf(req, consent)
@@ -287,8 +290,9 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
       if (!scope) return false
       // Grants store what the user picked at consent; older grants have no list and get the whole level.
       const stored = grant.data.permissions as KeyScopes | undefined
-      req.user = { ...user, _strategy: 'mcp-toolkit-oauth', _mcpKey: { keyId: grant.id, keyPrefix: null,
-        scopes: stored ? clampScopes(stored, levelOf(scope)) : { preset: levelOf(scope) } } } as PayloadRequest['user']
+      const authenticated = { ...user, _strategy: 'mcp-toolkit-oauth', _mcpKey: { keyId: grant.id, keyPrefix: null,
+        scopes: stored ? clampScopes(stored, levelOf(scope)) : { preset: levelOf(scope) } } }
+      req.user = authenticated
       return true
     } catch (error) {
       if (!(error instanceof OAuthError)) req.payload.logger.error({ event: 'mcp.oauth.authentication_failed' }, '[payload-mcp-toolkit] OAuth authentication failed')

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/payload-v4-next]
   pull_request:
     branches: [main]
 
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [20, 22]
+        node: ['24.15.0']
 
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,10 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - run: node --test scripts/release-target.test.mjs
+
+      - run: pnpm typecheck
 
       - run: pnpm test
 

@@ -1,7 +1,7 @@
 {
   "name": "payload-mcp-toolkit",
-  "version": "0.9.0",
-  "description": "Standalone schema-aware MCP plugin for Payload CMS v3 — owns the /api/mcp endpoint, scoped API keys, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.",
+  "version": "0.10.0-next.0",
+  "description": "Standalone schema-aware MCP plugin for Payload CMS v4 \u00e2\u20ac\u201d owns the /api/mcp endpoint, scoped API keys, draft workflow, and AI-friendly tools so non-technical editors can manage content via AI chat.",
   "license": "MIT",
   "author": "jon8800",
   "homepage": "https://github.com/jon8800/payload-mcp-toolkit#readme",
@@ -45,9 +45,12 @@
     "!dist/**/*.test.js.map",
     "!dist/**/*.test.d.ts"
   ],
-  "sideEffects": ["**/*.css", "**/*.scss"],
+  "sideEffects": [
+    "**/*.css",
+    "**/*.scss"
+  ],
   "scripts": {
-    "build": "pnpm copyfiles && pnpm build:types && pnpm build:swc",
+    "build": "pnpm clean && pnpm copyfiles && pnpm build:types && pnpm build:swc && node scripts/finalize-build.mjs",
     "build:swc": "swc ./src -d ./dist --config-file .swcrc --strip-leading-paths",
     "build:types": "tsc -p tsconfig.build.json",
     "clean": "rimraf dist",
@@ -58,44 +61,49 @@
     "dev:payload": "cd dev && cross-env PAYLOAD_CONFIG_PATH=./payload.config.ts payload",
     "prepack": "node scripts/prepack.mjs",
     "postpack": "node scripts/postpack.mjs",
-    "prepublishOnly": "pnpm clean && pnpm build && pnpm test",
+    "prepublishOnly": "pnpm build && pnpm test && node --test scripts/release-target.test.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit --emitDeclarationOnly false && tsc -p dev --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.23.0",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "mcp-handler": "^1.1.0"
   },
   "peerDependencies": {
-    "@payloadcms/ui": "^3.0.0",
-    "payload": "^3.0.0",
-    "zod": "^3.25 || ^4"
+    "@payloadcms/ui": "4.0.0-beta.3",
+    "payload": "4.0.0-beta.3",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@payloadcms/db-sqlite": "3.82.1",
-    "@payloadcms/next": "3.82.1",
-    "@payloadcms/richtext-lexical": "3.82.1",
-    "@payloadcms/ui": "3.82.1",
+    "@payloadcms/db-sqlite": "4.0.0-beta.3",
+    "@payloadcms/next": "4.0.0-beta.3",
+    "@payloadcms/richtext-lexical": "4.0.0-beta.3",
+    "@payloadcms/ui": "4.0.0-beta.3",
     "@swc/cli": "0.6.0",
-    "@types/node": "22.19.9",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/node": "24.12.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "copyfiles": "2.4.1",
     "cross-env": "^7.0.3",
     "graphql": "^16.8.1",
-    "next": "16.2.3",
-    "payload": "3.82.1",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "next": "16.4.2",
+    "payload": "4.0.0-beta.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "rimraf": "^5.0.5",
     "sharp": "0.34.2",
-    "typescript": "5.7.3",
-    "vite-tsconfig-paths": "6.0.5",
-    "vitest": "4.0.18",
-    "zod": "^3.23.8"
+    "typescript": "6.0.3",
+    "vitest": "5.0.1",
+    "zod": "3.25.76",
+    "vite": "8.3.4",
+    "@swc/core": "1.15.43",
+    "esbuild": "0.28.2",
+    "monaco-editor": "0.57.0",
+    "yjs": "13.6.33"
   },
   "engines": {
-    "node": "^18.20.2 || >=20.9.0",
+    "node": ">=24.15.0",
     "pnpm": ">=9"
   },
   "publishConfig": {
@@ -112,13 +120,16 @@
       }
     },
     "main": "./dist/index.js",
-    "types": "./dist/index.d.ts"
+    "types": "./dist/index.d.ts",
+    "tag": "next"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
       "sharp",
       "esbuild",
-      "better-sqlite3"
+      "better-sqlite3",
+      "@swc/core"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.30.3"
 }

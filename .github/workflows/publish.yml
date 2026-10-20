@@ -4,10 +4,17 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
+    if: github.repository == 'jon8800/payload-mcp-toolkit'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,10 +25,18 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '24.15.0'
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Check version tag and npm channel
+        id: release
+        run: node scripts/release-target.mjs
+
+      - run: node --test scripts/release-target.test.mjs
+
+      - run: pnpm typecheck
 
       - run: pnpm test
 
@@ -32,3 +47,4 @@ jobs:
       - run: node scripts/publish.mjs
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ steps.release.outputs.tag }}

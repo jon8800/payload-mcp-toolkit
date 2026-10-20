@@ -9,6 +9,12 @@ import { createHash } from 'node:crypto'
 import { execSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { releaseTarget } from './release-target.mjs'
+
+const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'))
+if (process.env.GITHUB_ACTIONS === 'true' && process.env.GITHUB_REF_TYPE !== 'tag') throw new Error('Publishing requires a version tag')
+const { tag } = releaseTarget({ name, version }, process.env.GITHUB_REF_NAME)
+if (process.env.NPM_TAG && process.env.NPM_TAG !== tag) throw new Error(`Version ${version} must publish to ${tag}`)
 
 const token =
   process.env.NPM_TOKEN?.trim() ||
@@ -17,8 +23,6 @@ if (!token) {
   console.error('No token: set NPM_TOKEN or add _authToken to ~/.npmrc')
   process.exit(1)
 }
-
-const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'))
 
 console.log(`Building ${name}@${version}…`)
 execSync('pnpm build', { stdio: 'inherit' })
@@ -48,7 +52,7 @@ manifest.dist = {
 const body = {
   _id: name,
   name,
-  'dist-tags': { latest: version },
+  'dist-tags': { [tag]: version },
   versions: { [version]: manifest },
   _attachments: {
     [tgz]: { content_type: 'application/octet-stream', data: buf.toString('base64'), length: buf.length },
@@ -65,4 +69,4 @@ if (!res.ok) {
   console.error(`Publish failed: ${res.status} ${res.statusText}\n${await res.text()}`)
   process.exit(1)
 }
-console.log(`Published ${name}@${version}`)
+console.log(`Published ${name}@${version} with npm tag ${tag}`)

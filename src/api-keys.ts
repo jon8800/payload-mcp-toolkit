@@ -1,4 +1,4 @@
-import type { CollectionBeforeValidateHook, CollectionConfig, Field } from 'payload'
+import type { CollectionBeforeValidateHook, CollectionConfig, CollectionSlug, Field } from 'payload'
 
 export const API_KEYS_DEFAULT_SLUG = 'payload-mcp-api-keys'
 
@@ -186,6 +186,9 @@ export function createApiKeysCollection(
 
   return {
     slug,
+    // Key rotation and revocation must not retain old credentials in version history.
+    versions: false,
+    authorship: false,
     admin: {
       group: 'MCP',
       useAsTitle: 'name',
@@ -315,7 +318,7 @@ export function createApiKeysCollection(
       {
         name: 'user',
         type: 'relationship',
-        relationTo: options.userCollection,
+        relationTo: options.userCollection as CollectionSlug,
         required: true,
         admin: {
           position: 'sidebar',

@@ -1,6 +1,6 @@
 # payload-mcp-toolkit
 
-A Payload CMS v3 plugin that lets AI apps such as Claude and ChatGPT read and edit your content over MCP.
+A Payload CMS v4 beta plugin that lets AI apps such as Claude and ChatGPT read and edit your content over MCP.
 
 It reads your Payload config when the server starts and builds tools, prompts and resources from your collections, globals and blocks. It serves them at `/api/mcp`. Clients connect in one of two ways:
 
@@ -12,10 +12,12 @@ Payload access control applies to every call. Tools run as the signed-in user or
 ## Install
 
 ```bash
-pnpm add payload-mcp-toolkit
+pnpm add payload-mcp-toolkit@next
 ```
 
-Peer dependencies: `payload` ^3, `@payloadcms/ui` ^3, `zod` ^3.25 or ^4.
+This prerelease targets Payload `4.0.0-beta.3` and Node `>=24.15.0`. Install matching `payload` and `@payloadcms/ui` versions. The public toolkit API uses Zod `^3.25.76`; Payload may use its own Zod 4 dependency. TypeScript projects need TypeScript `>=6.0.3`.
+
+`0.10.0-next.0` is a v4-only prerelease. The `latest` tag remains on the Payload 3 release. After upgrading, regenerate the host import map and types. API keys and OAuth records do not keep version history or authorship. Existing scope checks remain in force.
 
 ```ts
 // payload.config.ts

@@ -31,6 +31,9 @@ describe('mcpToolkitPlugin integration', () => {
     original.admin = { ...original.admin, components: { afterNavLinks: ['ExistingLink'], beforeDashboard: ['ExistingBanner'] } }
     const cfg = mcpToolkitPlugin({ oauth: { canAuthorize: () => true } })(original)
     expect(cfg.collections?.some(c => c.slug === 'payload-mcp-oauth')).toBe(true)
+    const oauthStorage = cfg.collections?.find(c => c.slug === 'payload-mcp-oauth')
+    expect(oauthStorage?.versions).toBe(false)
+    expect(oauthStorage?.authorship).toBe(false)
     expect(cfg.endpoints?.some(e => e.path === '/mcp/oauth/authorize')).toBe(true)
     expect(cfg.admin?.components?.afterNavLinks).toEqual(['ExistingLink', 'payload-mcp-toolkit/client#AgentConnectPill'])
     expect(cfg.admin?.components?.beforeDashboard).toEqual(['ExistingBanner'])
@@ -41,6 +44,9 @@ describe('mcpToolkitPlugin integration', () => {
     const cfg = mcpToolkitPlugin()(baseConfig())
     const slugs = (cfg.collections ?? []).map((c) => c.slug)
     expect(slugs).toContain('payload-mcp-api-keys')
+    const keys = cfg.collections?.find(c => c.slug === 'payload-mcp-api-keys')
+    expect(keys?.versions).toBe(false)
+    expect(keys?.authorship).toBe(false)
     expect(slugs).toContain('users')
     expect(slugs).toContain('posts')
     const endpointPaths = (cfg.endpoints ?? []).map((e) => `${e.method.toUpperCase()} ${e.path}`)
@@ -87,8 +93,8 @@ describe('mcpToolkitPlugin integration', () => {
 
   it('throws when @payloadcms/plugin-mcp appears to also be registered', () => {
     const cfg = baseConfig() as Config
-    function mcpPlugin() {}
-    ;(cfg as { plugins: unknown[] }).plugins = [mcpPlugin as never]
+    const upstream = Object.assign((config: Config) => config, { slug: '@payloadcms/plugin-mcp' })
+    ;(cfg as { plugins: unknown[] }).plugins = [upstream]
     expect(() => mcpToolkitPlugin()(cfg)).toThrow(/standalone successor/)
   })
 

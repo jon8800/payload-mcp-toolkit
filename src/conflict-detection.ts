@@ -7,22 +7,6 @@ const UPGRADE_HINT =
   'See README "Upgrading from 0.3.x".'
 
 /**
- * Returns true when the supplied plugin reference looks like the upstream
- * `mcpPlugin(...)` invocation (function name, source-string sniff, or wrapped
- * config probing). Heuristic: covers the three common ways the upstream
- * plugin shows up in `plugins[]`.
- */
-function looksLikeUpstreamPlugin(plugin: unknown): boolean {
-  if (typeof plugin !== 'function') return false
-  const fn = plugin as (...args: unknown[]) => unknown
-  const fnName = (fn.name ?? '').toString()
-  if (fnName === 'mcpPlugin' || fnName === 'withMcp') return true
-
-  const src = fn.toString()
-  return /@payloadcms\/plugin-mcp/.test(src) || /payload-mcp-api-keys/.test(src)
-}
-
-/**
  * Throws if `@payloadcms/plugin-mcp` is also registered in the host config.
  * Two MCP plugins racing for the same collection slug produces a confusing
  * boot crash inside Payload — this surfaces a clearer migration message.
@@ -30,7 +14,8 @@ function looksLikeUpstreamPlugin(plugin: unknown): boolean {
 export function assertNoUpstreamPlugin(plugins: Plugin[] | undefined): void {
   if (!plugins || plugins.length === 0) return
   for (const plugin of plugins) {
-    if (looksLikeUpstreamPlugin(plugin)) {
+    // Payload v4's definePlugin sets this stable identity. Minification changes function source and names.
+    if (plugin.slug === '@payloadcms/plugin-mcp') {
       throw new Error(UPGRADE_HINT)
     }
   }

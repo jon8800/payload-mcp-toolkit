@@ -90,14 +90,14 @@ function mapToRows(
 const cellStyle: React.CSSProperties = {
   textAlign: 'center',
   padding: '0.5rem 0.5rem',
-  borderLeft: '1px solid var(--theme-elevation-100)',
+  borderLeft: '1px solid var(--color-border)',
   verticalAlign: 'middle',
 }
 
 const headerCellStyle: React.CSSProperties = {
   ...cellStyle,
-  background: 'var(--theme-elevation-50)',
-  borderBottom: '1px solid var(--theme-elevation-150)',
+  background: 'var(--color-bg-secondary)',
+  borderBottom: '1px solid var(--color-border)',
   fontWeight: 600,
 }
 
@@ -190,8 +190,8 @@ export function ScopesMatrix(props: ScopesMatrixProps): React.ReactElement {
           width: '100%',
           borderCollapse: 'collapse',
           fontSize: '0.9rem',
-          background: 'var(--theme-input-bg)',
-          border: '1px solid var(--theme-elevation-150)',
+          background: 'var(--field-color-bg)',
+          border: '1px solid var(--color-border)',
           borderRadius: '4px',
           overflow: 'hidden',
         }}
@@ -240,13 +240,13 @@ export function ScopesMatrix(props: ScopesMatrixProps): React.ReactElement {
                 key={slug}
                 style={{
                   background:
-                    idx % 2 === 0 ? 'var(--theme-input-bg)' : 'var(--theme-elevation-25)',
+                    idx % 2 === 0 ? 'var(--field-color-bg)' : 'var(--color-bg-secondary)',
                 }}
               >
                 <td
                   style={{
                     ...labelCellStyle,
-                    borderTop: idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)',
+                    borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
@@ -262,7 +262,7 @@ export function ScopesMatrix(props: ScopesMatrixProps): React.ReactElement {
                       <code
                         style={{
                           fontSize: '0.75rem',
-                          color: 'var(--theme-elevation-500)',
+                          color: 'var(--color-text-secondary)',
                           background: 'transparent',
                           padding: 0,
                         }}
@@ -277,7 +277,7 @@ export function ScopesMatrix(props: ScopesMatrixProps): React.ReactElement {
                     key={action}
                     style={{
                       ...cellStyle,
-                      borderTop: idx === 0 ? 'none' : '1px solid var(--theme-elevation-100)',
+                      borderTop: idx === 0 ? 'none' : '1px solid var(--color-border)',
                     }}
                   >
                     <CheckboxInput
@@ -303,7 +303,7 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
     return (
       <div className="field-type" style={{ padding: '0.5rem 0' }}>
         <label className="field-label">{props.title}</label>
-        <p style={{ color: 'var(--theme-elevation-500)', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
+        <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
           {props.emptyMessage}
         </p>
       </div>
@@ -317,7 +317,7 @@ export function ScopesTable(props: ScopesTableProps): React.ReactElement {
       </label>
       <p
         style={{
-          color: 'var(--theme-elevation-500)',
+          color: 'var(--color-text-secondary)',
           fontSize: '0.85rem',
           margin: '0.25rem 0 0.75rem',
         }}

@@ -1,4 +1,4 @@
-import type { AuthStrategy, PayloadRequest, Where } from 'payload'
+import type { AuthStrategy, CollectionSlug, PayloadRequest, Where } from 'payload'
 import { extractBearerToken, hashKey } from './hash'
 import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
 
@@ -279,7 +279,7 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       let docs: ApiKeyRow[] = []
       try {
         const result = (await payload.find({
-          collection: collectionSlug,
+          collection: collectionSlug as CollectionSlug,
           where,
           depth: 1,
           limit: 1,
@@ -313,7 +313,7 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       // Fire-and-forget: do not block the request on this write.
       void payload
         .update({
-          collection: collectionSlug,
+          collection: collectionSlug as CollectionSlug,
           id: row.id,
           data: { lastUsedAt: new Date().toISOString() } as Record<string, unknown>,
           overrideAccess: true,

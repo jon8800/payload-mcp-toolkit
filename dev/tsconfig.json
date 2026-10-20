@@ -1,6 +1,11 @@
 {
   "extends": "../tsconfig.json",
-  "exclude": [],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "../src/**/*.test.ts",
+    "../src/**/__tests__/**"
+  ],
   "include": [
     "**/*.ts",
     "**/*.tsx",
@@ -9,13 +14,27 @@
     ".next/types/**/*.ts"
   ],
   "compilerOptions": {
-    "baseUrl": "./",
     "paths": {
-      "@payload-config": ["./payload.config.ts"],
-      "payload-mcp-toolkit": ["../src/index.ts"],
-      "payload-mcp-toolkit/client": ["../src/components/index.ts"]
+      "@payload-config": [
+        "./payload.config.ts"
+      ],
+      "payload-mcp-toolkit": [
+        "../src/index.ts"
+      ],
+      "payload-mcp-toolkit/client": [
+        "../src/components/index.ts"
+      ]
     },
     "noEmit": true,
-    "emitDeclarationOnly": false
+    "emitDeclarationOnly": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "declaration": false
   }
 }

@@ -24,7 +24,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   }
   return (
     <div className="mcp-oauth__copy">
-      <Button type="button" buttonStyle="secondary" size="small" margin={false} onClick={copy}>{label}</Button>
+      <Button type="button" buttonStyle="secondary" size="medium" margin={false} onClick={copy}>{label}</Button>
       <span role="status">{status}</span>
     </div>
   )
@@ -69,7 +69,7 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
     <Gutter>
       <main className="mcp-oauth">
         <h1>{mode === 'authorize' ? 'Connect your account' : 'AI connections'}</h1>
-        {error ? <Banner type="error"><span role="alert">{error}</span></Banner> : !data ? <p role="status">Loading connection…</p> : null}
+        {error ? <Banner type="danger"><span role="alert">{error}</span></Banner> : !data ? <p role="status">Loading connection…</p> : null}
         {approval && (
           <>
             <p><strong>{approval.clientName}</strong> is requesting access to your website account.</p>
