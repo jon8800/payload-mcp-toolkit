@@ -17,7 +17,7 @@ pnpm add payload-mcp-toolkit@next
 
 This prerelease targets Payload `4.0.0-beta.3` and Node `>=24.15.0`. Install matching `payload` and `@payloadcms/ui` versions. The public toolkit API uses Zod `^3.25.76`; Payload may use its own Zod 4 dependency. TypeScript projects need TypeScript `>=6.0.3`.
 
-`0.10.0-next.0` is a v4-only prerelease. The `latest` tag remains on the Payload 3 release. After upgrading, regenerate the host import map and types. API keys and OAuth records do not keep version history or authorship. Existing scope checks remain in force.
+`0.10.0-next.1` is a v4-only prerelease. The `latest` tag remains on the Payload 3 release. After upgrading, regenerate the host import map and types. API keys and OAuth records do not keep version history or authorship. Existing scope checks remain in force.
 
 ```ts
 // payload.config.ts

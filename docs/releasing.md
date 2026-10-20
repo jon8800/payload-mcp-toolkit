@@ -1,8 +1,8 @@
 # Payload 4 prerelease
 
-Candidate: `payload-mcp-toolkit@0.10.0-next.0`, for Payload `4.0.0-beta.3` only.
+Candidate: `payload-mcp-toolkit@0.10.0-next.1`, for Payload `4.0.0-beta.3` only.
 
-This worktree starts at `d43b283` on `release/payload-v4-next`. The original checkout and the npm `latest` tag remain unchanged.
+Source commit `e93686c` is already pushed on `release/payload-v4-next`. Its `v0.10.0-next.0` tag failed before publication because the workflow specified two conflicting pnpm versions. Keep that tag unchanged. This recovery removes the redundant workflow input and prepares a new immutable version tag.
 
 ## Validation
 
@@ -23,8 +23,8 @@ The inspected tarball contains 140 files. All public exports point to existing `
 
 ## Publishing
 
-After review, commit this worktree and push tag `v0.10.0-next.0`. The existing GitHub publish workflow uses the repository's `NPM_TOKEN` secret. No secret values are needed in chat or local files.
+After review, commit this recovery and push tag `v0.10.0-next.1`. The existing GitHub publish workflow uses the repository's `NPM_TOKEN` secret. No secret values are needed in chat or local files.
 
 The workflow checks the version tag before calling `scripts/publish.mjs`. The raw publisher independently repeats the check. It derives `next` from the prerelease version and refuses a conflicting `NPM_TAG`. Its registry request updates only that npm tag. The existing stable `latest` tag stays on `0.9.0`.
 
-The parent task must complete the combined consumer build before release. This preparation does not commit, push, tag, or publish anything.
+The parent task must check the new archive in the combined consumer before release. The recovery changes remain uncommitted and unpushed. This preparation does not alter existing tags or publish anything.

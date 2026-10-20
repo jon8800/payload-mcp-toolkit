@@ -4,6 +4,12 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0-next.1] - 2026-10-20
+
+### Fixed
+- GitHub CI and publishing now read the exact pnpm version from package.json. The redundant action input prevented the previous tag from reaching publication.
+- No runtime code changes. The existing `v0.10.0-next.0` tag stays unchanged.
+
 ## [0.10.0-next.0] - 2026-10-20
 
 ### Changed
