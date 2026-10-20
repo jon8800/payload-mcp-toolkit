@@ -1,48 +1,25 @@
-name: Publish to npm
+name: Publish checked Gallery prerelease
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: publish
-  cancel-in-progress: false
 
 jobs:
   publish:
     if: github.repository == 'jon8800/payload-mcp-toolkit'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v6
         with:
           node-version: '24.15.0'
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Check version tag and npm channel
-        id: release
-        run: node scripts/release-target.mjs
-
-      - run: node --test scripts/release-target.test.mjs
-
-      - run: pnpm typecheck
-
-      - run: pnpm test
-
-      # Publishes via a raw authenticated PUT (see scripts/publish.mjs).
-      # `npm publish` 403s on this account: security-key-only 2FA collides with
-      # npm's CLI OTP flow. NOT a Cloudflare/registry problem — the registry
-      # accepts a plain authenticated PUT with the bypass-2FA token below.
-      - run: node scripts/publish.mjs
+      - name: Fetch the checked Gallery archive
+        run: |
+          curl --fail --location https://github.com/jon8800/payload-media-gallery/releases/download/v0.2.0-next.1/payload-media-gallery-0.2.0-next.1.tgz --output gallery.tgz
+          echo '66b3536085075b8fdc4d1a4f940471efdf9356cdc14b8d4178b913e5de583e92  gallery.tgz' | sha256sum --check
+          curl --fail --location https://raw.githubusercontent.com/jon8800/payload-canvas/a0fc48e/scripts/publish.mjs --output publish.mjs
+      - name: Publish only the checked prerelease to next
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TAG: ${{ steps.release.outputs.tag }}
+        run: node publish.mjs --expect-version 0.2.0-next.1 gallery.tgz
