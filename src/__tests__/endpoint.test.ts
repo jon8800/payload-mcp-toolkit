@@ -145,6 +145,29 @@ describe('createMcpEndpoints', () => {
     expect((forwarded as Request).method).toBe('POST')
   })
 
+  it('resolves only after the streamed tool response has finished', async () => {
+    let toolFinished = false
+    handlerMock.mockImplementationOnce(async () => {
+      const encoder = new TextEncoder()
+      const body = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(encoder.encode('event: message\n'))
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          toolFinished = true
+          controller.enqueue(encoder.encode('data: {"result":{}}\n\n'))
+          controller.close()
+        },
+      })
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    })
+    const [post] = createMcpEndpoints({ buildInitializeServer })
+    const response = await post.handler(buildReq({}) as never)
+    expect(toolFinished).toBe(true)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/event-stream')
+    expect(await response.text()).toBe('event: message\ndata: {"result":{}}\n\n')
+  })
+
   it('rejects unauthenticated POSTs with 401 before constructing the mcp-handler', async () => {
     const [postEndpoint] = createMcpEndpoints({ buildInitializeServer })
     const res = await postEndpoint.handler(buildReq({ authenticated: false }) as never)

@@ -4,6 +4,11 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.1] - 2026-11-06
+
+### Fixed
+- Pages edited through MCP now refresh on Next.js hosts. `POST /api/mcp` reads the full tool response before it returns. Before, the response returned while the tool was still running, so Next.js dropped the `revalidatePath` / `revalidateTag` calls made by the host's Payload hooks, and published pages kept serving the old version.
+
 ## [0.9.0] - 2026-09-24
 
 ### Added

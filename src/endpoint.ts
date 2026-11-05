@@ -128,7 +128,16 @@ export function createMcpEndpoints(options: CreateMcpEndpointsOptions): Endpoint
       ...({ duplex: 'half' } as Record<string, unknown>),
     })
 
-    return handler(fetchRequest)
+    // mcp-handler answers with a stream and runs the tool while it streams. Read
+    // the whole body before returning, so tools (and the Payload hooks they
+    // trigger) finish inside this request. Otherwise Next.js has already
+    // flushed the request's revalidatePath/revalidateTag calls and drops them.
+    const response = await handler(fetchRequest)
+    return new Response(await response.arrayBuffer(), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
   }
 
   const getHandler = async (req: PayloadRequest): Promise<Response> => {
