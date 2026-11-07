@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react'
 import { Banner, Button, Gutter } from '@payloadcms/ui'
-import type { Catalog } from '../oauth-permissions'
-import { agentInstructions } from './agentInstructions'
-import { ConsentPermissions } from './ConsentPermissions'
-import './oauth.css'
+import type { Catalog } from '../oauth-permissions.js'
+import { agentInstructions } from './agentInstructions.js'
+import { ConsentPermissions } from './ConsentPermissions.js'
+import { OAuthStyles } from './OAuthStyles.js'
 
 type Consent = { consent: string; clientName: string; account: string; scope: string; catalog: Catalog }
 type Grant = { consent: string; clientName: string; scope: string; summary: string }
@@ -68,6 +68,7 @@ export function OAuthView({ mode }: { mode: 'authorize' | 'connections' }) {
   return (
     <Gutter>
       <main className="mcp-oauth">
+        <OAuthStyles />
         <h1>{mode === 'authorize' ? 'Connect your account' : 'AI connections'}</h1>
         {error ? <Banner type="error"><span role="alert">{error}</span></Banner> : !data ? <p role="status">Loading connection…</p> : null}
         {approval && (

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { jsonResponse, stampMcpContext } from './_helpers'
+import { jsonResponse, stampMcpContext } from './_helpers.js'
 
 interface MatchCandidate {
   collection: string

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { CollectionSchema } from '../types'
-import { jsonResponse, stampMcpContext } from './_helpers'
+import type { CollectionSchema } from '../types.js'
+import { jsonResponse, stampMcpContext } from './_helpers.js'
 
 const DEFAULT_LIMIT = 20
 const HARD_LIMIT = 100

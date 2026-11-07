@@ -1,49 +1,50 @@
 import type { Block, CollectionConfig, Config, GlobalConfig, Plugin } from 'payload'
-import type { ContentToolkitOptions, GlobalSchema } from './types'
+import type { ContentToolkitOptions, GlobalSchema } from './types.js'
 import {
   introspectCollections,
   introspectGlobals,
   introspectBlocks,
   buildBlockNestingMap,
   buildRelationshipGraph,
-} from './introspection'
-import { generatePrompts } from './prompts'
-import { generateResources } from './resources'
-import { computeDraftCollections, computeDraftGlobals } from './draft-workflow'
-import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys'
-import { createBearerStrategy } from './auth-strategy'
-import { createMcpEndpoints } from './endpoint'
-import { createOAuth } from './oauth'
-import { createOAuthCollection, OAUTH_COLLECTION } from './oauth-store'
+} from './introspection.js'
+import { generatePrompts } from './prompts.js'
+import { generateResources } from './resources.js'
+import { computeDraftCollections, computeDraftGlobals } from './draft-workflow.js'
+import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from './api-keys.js'
+import { createBearerStrategy } from './auth-strategy.js'
+import { createMcpEndpoints } from './endpoint.js'
+import { createOAuth } from './oauth.js'
+import { createOAuthCollection, OAUTH_COLLECTION } from './oauth-store.js'
 import {
   createInitializeServer,
   type ToolFactoryOutput,
-} from './registry'
+} from './registry.js'
 import {
   assertNoSlugConflict,
   assertNoToolNameConflict,
   assertNoUpstreamPlugin,
-} from './conflict-detection'
-import { createCreateDocumentTool } from './tools/create-document'
-import { createDeleteDocumentTool } from './tools/delete-document'
-import { createFindDocumentTool } from './tools/find-document'
-import { createFindGlobalTool } from './tools/find-global'
-import { createUpdateGlobalTool } from './tools/update-global'
-import { createPatchGlobalLayoutTool } from './tools/patch-global-layout'
-import { createPublishGlobalDraftTool } from './tools/publish-global-draft'
+  markToolkitPlugin,
+} from './conflict-detection.js'
+import { createCreateDocumentTool } from './tools/create-document.js'
+import { createDeleteDocumentTool } from './tools/delete-document.js'
+import { createFindDocumentTool } from './tools/find-document.js'
+import { createFindGlobalTool } from './tools/find-global.js'
+import { createUpdateGlobalTool } from './tools/update-global.js'
+import { createPatchGlobalLayoutTool } from './tools/patch-global-layout.js'
+import { createPublishGlobalDraftTool } from './tools/publish-global-draft.js'
 import {
   createListGlobalVersionsTool,
   createRestoreGlobalVersionTool,
-} from './tools/global-versions'
-import { createPatchLayoutTool } from './tools/patch-layout'
-import { createPublishDraftTool } from './tools/publish-draft'
-import { createResolveReferenceTool } from './tools/resolve-reference'
-import { createSafeDeleteTool } from './tools/safe-delete'
-import { createSchedulePublishTool } from './tools/schedule-publish'
-import { createSearchContentTool } from './tools/search-content'
-import { createUpdateDocumentTool } from './tools/update-document'
-import { createUploadMediaTool } from './tools/upload-media'
-import { createListVersionsTool, createRestoreVersionTool } from './tools/versions'
+} from './tools/global-versions.js'
+import { createPatchLayoutTool } from './tools/patch-layout.js'
+import { createPublishDraftTool } from './tools/publish-draft.js'
+import { createResolveReferenceTool } from './tools/resolve-reference.js'
+import { createSafeDeleteTool } from './tools/safe-delete.js'
+import { createSchedulePublishTool } from './tools/schedule-publish.js'
+import { createSearchContentTool } from './tools/search-content.js'
+import { createUpdateDocumentTool } from './tools/update-document.js'
+import { createUploadMediaTool } from './tools/upload-media.js'
+import { createListVersionsTool, createRestoreVersionTool } from './tools/versions.js'
 
 /**
  * Resolves the user collection slug for API-key linkage.
@@ -80,7 +81,7 @@ function resolveUserCollection(
  * See `ContentToolkitOptions` for the (entirely optional) escape hatches.
  */
 export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
-  return (incomingConfig: Config): Config => {
+  return markToolkitPlugin((incomingConfig: Config): Config => {
     const apiKeysSlug = options.apiKeyCollection?.slug ?? API_KEYS_DEFAULT_SLUG
     if (options.oauth) assertNoSlugConflict(incomingConfig.collections as CollectionConfig[] | undefined, OAUTH_COLLECTION)
 
@@ -322,18 +323,18 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
       collections: collectionsWithStrategy,
       endpoints: [...(incomingConfig.endpoints ?? []), ...mcpEndpoints, ...(oauth?.endpoints ?? [])],
     }
-  }
+  })
 }
 
 // Runtime helpers for building custom tools — the same envelope builders the
 // built-in tools use, so a host tool returns the identical result shape.
-export { jsonResponse, textResponse } from './tools/_helpers'
-export type { OAuthOptions } from './oauth'
-export { pruneOAuthRecords } from './oauth-store'
+export { jsonResponse, textResponse } from './tools/_helpers.js'
+export type { OAuthOptions } from './oauth.js'
+export { pruneOAuthRecords } from './oauth-store.js'
 
-export type { ToolFactoryOutput } from './registry'
-export type { ToolRouting, ResourceKind } from './scope/policy'
-export type { McpTextResponse } from './tools/_helpers'
+export type { ToolFactoryOutput } from './registry.js'
+export type { ToolRouting, ResourceKind } from './scope/policy.js'
+export type { McpTextResponse } from './tools/_helpers.js'
 
 export type {
   ContentToolkitOptions,
@@ -350,4 +351,4 @@ export type {
   GlobalAction,
   KeyScopes,
   ScopePreset,
-} from './types'
+} from './types.js'

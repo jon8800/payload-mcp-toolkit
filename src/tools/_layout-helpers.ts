@@ -1,4 +1,4 @@
-import { jsonResponse } from './_helpers'
+import { jsonResponse } from './_helpers.js'
 
 /**
  * Shared internals for patchLayout (collections) and patchGlobalLayout

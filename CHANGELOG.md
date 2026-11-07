@@ -4,6 +4,17 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-11-07
+
+### Fixed
+- `next build` no longer fails with "payload-mcp-toolkit v0.4 is the standalone successor to @payloadcms/plugin-mcp". The startup check searched each plugin's source text for `payload-mcp-api-keys`. When Next bundles the toolkit, it copies a helper that holds that slug into the toolkit's own plugin function, so the check found the toolkit itself. The check no longer reads source text. The toolkit's plugin function now carries a marker (`Symbol.for('payload-mcp-toolkit.plugin')`), and the check skips marked functions. An upstream `@payloadcms/plugin-mcp` that ran first is still caught, because its `payload-mcp-api-keys` collection is already in the config.
+- `dist` is now valid Node ESM, so plain Node can import the plugin. Every relative import in `dist` now ends in `.js`. Before, imports such as `./introspection` failed with `ERR_MODULE_NOT_FOUND` when Node loaded the package without a bundler. The `.d.ts` files get the same fix, so `moduleResolution: "nodenext"` hosts resolve the types.
+- The admin components no longer import a `.css` file, which Node ESM cannot load. They render their styles in a React 19 `<style>` tag instead. Note: listing the whole package in `serverExternalPackages` still fails on the admin page, because `@payloadcms/ui` itself imports `.css` files. That limit applies to every Payload plugin with admin components. Let Next bundle the package.
+
+### Changed
+- Source imports use `.js` extensions, and `tsconfig.build.json` uses `NodeNext`, so the type check rejects an import without an extension.
+- `pnpm build` now ends with `scripts/check-dist-esm.mjs`. It fails the build if any relative import in `dist` does not name a real file, or if plain Node cannot import `dist/index.js`.
+
 ## [0.9.1] - 2026-11-06
 
 ### Fixed

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { GlobalConfig, PayloadRequest } from 'payload'
-import type { GlobalSchema } from '../types'
-import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers'
+import type { GlobalSchema } from '../types.js'
+import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers.js'
 
 interface FindGlobalArgs {
   slug: string

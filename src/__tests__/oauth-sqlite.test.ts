@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { buildConfig, getPayload, type Payload, type PayloadRequest } from 'payload'
 import { sqliteAdapter } from '@payloadcms/db-sqlite'
-import { createOAuth } from '../oauth'
-import { createOAuthCollection, consumeRecord, readRecord, tokenKey, writeRecord } from '../oauth-store'
+import { createOAuth } from '../oauth.js'
+import { createOAuthCollection, consumeRecord, readRecord, tokenKey, writeRecord } from '../oauth-store.js'
 
 let payload: Payload
 const origin = 'https://cms.example.com'

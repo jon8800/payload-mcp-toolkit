@@ -1,8 +1,8 @@
 import type { AuthStrategy, PayloadRequest, Where } from 'payload'
-import { extractBearerToken, hashKey } from './hash'
-import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
+import { extractBearerToken, hashKey } from './hash.js'
+import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types.js'
 
-export type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types'
+export type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from './types.js'
 
 export const AUTH_STRATEGY_NAME = 'mcp-toolkit-bearer'
 

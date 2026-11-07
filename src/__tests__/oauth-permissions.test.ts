@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { clampScopes, fullChoice, permissionsFrom, summarize, toolsFor, type Catalog } from '../oauth-permissions'
-import { buildScopeChecker } from '../scope/policy'
+import { clampScopes, fullChoice, permissionsFrom, summarize, toolsFor, type Catalog } from '../oauth-permissions.js'
+import { buildScopeChecker } from '../scope/policy.js'
 
 const catalog: Catalog = { collections: ['posts', 'pages'], globals: ['settings'], tools: [
   { name: 'findDocument', kind: 'collection', action: 'read' },

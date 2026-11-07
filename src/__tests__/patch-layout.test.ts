@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Block, CollectionConfig } from 'payload'
-import { introspectBlocks, buildBlockNestingMap } from '../introspection'
-import { createPatchLayoutTool } from '../tools/patch-layout'
+import { introspectBlocks, buildBlockNestingMap } from '../introspection.js'
+import { createPatchLayoutTool } from '../tools/patch-layout.js'
 
 const Heading: Block = { slug: 'heading', fields: [{ name: 'text', type: 'text' }] }
 const CtaBanner: Block = { slug: 'ctaBanner', fields: [{ name: 'label', type: 'text' }] }

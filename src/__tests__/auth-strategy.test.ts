@@ -5,8 +5,8 @@ import {
   getApiKeyContext,
   composeScopes,
   _resetLegacyWarnsForTests,
-} from '../auth-strategy'
-import { hashKey } from '../hash'
+} from '../auth-strategy.js'
+import { hashKey } from '../hash.js'
 
 const SECRET = 'test-payload-secret'
 

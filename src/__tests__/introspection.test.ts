@@ -9,7 +9,7 @@ import {
   hasGlobalDrafts,
   introspectGlobal,
   introspectGlobals,
-} from '../introspection'
+} from '../introspection.js'
 
 // ─── Sample schema (kept inline so the test is self-contained) ─────
 

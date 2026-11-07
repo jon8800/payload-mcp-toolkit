@@ -1,3 +1,8 @@
+import React from 'react'
+
+// Rendered as a React 19 hoisted <style>, not imported as a .css file: Node ESM
+// cannot load .css imports, and hosts may load this package without a bundler.
+const css = `
 .mcp-oauth {
   max-width: 42rem;
   margin: calc(var(--base) * 3) auto;
@@ -109,3 +114,12 @@
 .mcp-oauth__copy { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--base) * .5); margin: calc(var(--base) * .5) 0 var(--base); }
 .mcp-oauth__connection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--base); padding: var(--base) 0; border-top: 1px solid var(--theme-elevation-150); }
 .mcp-oauth__connection p { margin: 0; }
+`
+
+export function OAuthStyles() {
+  return (
+    <style href="payload-mcp-toolkit-oauth" precedence="default">
+      {css}
+    </style>
+  )
+}

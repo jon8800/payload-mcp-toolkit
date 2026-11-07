@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { RelationshipEdge } from '../types'
-import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers'
+import type { RelationshipEdge } from '../types.js'
+import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers.js'
 
 const SAMPLE_LIMIT = 5
 

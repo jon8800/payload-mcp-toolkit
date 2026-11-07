@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Config } from 'payload'
-import { mcpToolkitPlugin } from '../index'
+import { mcpToolkitPlugin } from '../index.js'
 
 function baseConfig(): Config {
   return {

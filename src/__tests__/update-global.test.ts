@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createUpdateGlobalTool } from '../tools/update-global'
-import type { GlobalSchema } from '../types'
+import { createUpdateGlobalTool } from '../tools/update-global.js'
+import type { GlobalSchema } from '../types.js'
 
 const siteSettings: GlobalSchema = {
   slug: 'site-settings',

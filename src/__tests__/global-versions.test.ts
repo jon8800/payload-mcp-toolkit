@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createPublishGlobalDraftTool } from '../tools/publish-global-draft'
+import { createPublishGlobalDraftTool } from '../tools/publish-global-draft.js'
 import {
   createListGlobalVersionsTool,
   createRestoreGlobalVersionTool,
-} from '../tools/global-versions'
+} from '../tools/global-versions.js'
 
 function buildReq() {
   return {

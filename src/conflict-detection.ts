@@ -1,25 +1,41 @@
 import type { CollectionConfig, Plugin } from 'payload'
-import { API_KEYS_DEFAULT_SLUG } from './api-keys'
+import { API_KEYS_DEFAULT_SLUG } from './api-keys.js'
 
 const UPGRADE_HINT =
   'payload-mcp-toolkit v0.4 is the standalone successor to @payloadcms/plugin-mcp. ' +
   'Remove the upstream `mcpPlugin(...)` from your `plugins[]` (and the package from your dependencies) before upgrading. ' +
   'See README "Upgrading from 0.3.x".'
 
+// Symbol.for, not Symbol(): a bundled copy and an external copy of this
+// package must still recognise each other's plugin functions.
+const TOOLKIT_PLUGIN = Symbol.for('payload-mcp-toolkit.plugin')
+
+/** Tags a plugin function as this toolkit's own, so the upstream check skips it. */
+export function markToolkitPlugin<T extends Plugin>(plugin: T): T {
+  Object.defineProperty(plugin, TOOLKIT_PLUGIN, { value: true })
+  return plugin
+}
+
+export function isToolkitPlugin(plugin: unknown): boolean {
+  return (
+    typeof plugin === 'function' &&
+    (plugin as { [TOOLKIT_PLUGIN]?: unknown })[TOOLKIT_PLUGIN] === true
+  )
+}
+
 /**
- * Returns true when the supplied plugin reference looks like the upstream
- * `mcpPlugin(...)` invocation (function name, source-string sniff, or wrapped
- * config probing). Heuristic: covers the three common ways the upstream
- * plugin shows up in `plugins[]`.
+ * Returns true when the plugin is the upstream `mcpPlugin` / `withMcp`
+ * function itself. Never reads function source text: bundlers inline helpers
+ * (and the api-keys slug with them) into the toolkit's own plugin function,
+ * so a source search matched the toolkit and failed `next build`. The signal
+ * that does not depend on bundling is the built config — an api-keys
+ * collection that is already present — which `assertNoSlugConflict` checks.
  */
 function looksLikeUpstreamPlugin(plugin: unknown): boolean {
   if (typeof plugin !== 'function') return false
-  const fn = plugin as (...args: unknown[]) => unknown
-  const fnName = (fn.name ?? '').toString()
-  if (fnName === 'mcpPlugin' || fnName === 'withMcp') return true
-
-  const src = fn.toString()
-  return /@payloadcms\/plugin-mcp/.test(src) || /payload-mcp-api-keys/.test(src)
+  if (isToolkitPlugin(plugin)) return false
+  const fnName = ((plugin as { name?: unknown }).name ?? '').toString()
+  return fnName === 'mcpPlugin' || fnName === 'withMcp'
 }
 
 /**

@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from 'react'
 import { toast, Tooltip, usePreferences, XIcon } from '@payloadcms/ui'
-import { agentInstructions } from './agentInstructions'
-import './oauth.css'
+import { agentInstructions } from './agentInstructions.js'
+import { OAuthStyles } from './OAuthStyles.js'
 
 const PREFERENCE = 'mcp-agent-pill-dismissed'
 // Browser navigation to this endpoint redirects to the admin setup page, whatever the admin route is.
@@ -66,6 +66,7 @@ export function AgentConnectPill() {
 
   return (
     <div className="mcp-agent-pill">
+      <OAuthStyles />
       <button
         className="mcp-agent-pill__copy"
         onBlur={() => setHover(false)}

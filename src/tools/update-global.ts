@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { GlobalSchema } from '../types'
-import { DRAFT_NOTE, errorMessage, slugEnum, stampMcpContext, textResponse } from './_helpers'
+import type { GlobalSchema } from '../types.js'
+import { DRAFT_NOTE, errorMessage, slugEnum, stampMcpContext, textResponse } from './_helpers.js'
 
 interface UpdateGlobalArgs {
   slug: string

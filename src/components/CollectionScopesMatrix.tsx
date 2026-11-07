@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ScopesTable } from './ScopesTable'
+import { ScopesTable } from './ScopesTable.js'
 
 const ACTIONS = ['read', 'create', 'update', 'delete']
 const ACTION_LABELS: Record<string, string> = {

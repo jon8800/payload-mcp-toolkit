@@ -8,7 +8,7 @@ import type {
   FieldSchema,
   GlobalSchema,
   RelationshipEdge,
-} from './types'
+} from './types.js'
 
 /**
  * True if the collection has Payload drafts enabled in its versions config.

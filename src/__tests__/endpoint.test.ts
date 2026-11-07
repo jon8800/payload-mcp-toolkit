@@ -7,7 +7,7 @@ vi.mock('mcp-handler', () => ({
   createMcpHandler: (...args: unknown[]) => createMcpHandlerMock(...args),
 }))
 
-import { createMcpEndpoints, MCP_ENDPOINT_PATH } from '../endpoint'
+import { createMcpEndpoints, MCP_ENDPOINT_PATH } from '../endpoint.js'
 
 function buildReq(overrides: {
   origin?: string | null

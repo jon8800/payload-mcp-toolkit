@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { validateAndFetchUrl } from '../url-validator'
-import { errorMessage, stampMcpContext, textResponse, populateDepth } from './_helpers'
+import { validateAndFetchUrl } from '../url-validator.js'
+import { errorMessage, stampMcpContext, textResponse, populateDepth } from './_helpers.js'
 
 const DEFAULT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const ALLOWED_IMAGE_TYPES = new Set([

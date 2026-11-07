@@ -4,7 +4,7 @@ import type {
   CollectionSchema,
   DomainPrompt,
   RelationshipEdge,
-} from './types'
+} from './types.js'
 
 /**
  * Generate MCP prompts that teach the AI about the content model.

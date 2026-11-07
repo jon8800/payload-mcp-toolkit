@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import type { CollectionConfig, PayloadRequest } from 'payload'
-import type { CollectionSchema } from '../types'
+import type { CollectionSchema } from '../types.js'
 import {
   decorateDraftResponse,
   errorMessage,
   jsonResponse,
   stampMcpContext,
-  textResponse, hasDottedPath, LIMITED_SCOPE, populateDepth } from './_helpers'
+  textResponse, hasDottedPath, LIMITED_SCOPE, populateDepth } from './_helpers.js'
 
 interface FindDocumentArgs {
   collection: string

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { Field } from 'payload'
-import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from '../api-keys'
+import { createApiKeysCollection, API_KEYS_DEFAULT_SLUG } from '../api-keys.js'
 
 const baseOptions = {
   userCollection: 'users',

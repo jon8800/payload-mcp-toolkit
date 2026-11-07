@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import dns from 'node:dns'
-import { isPrivateIp, validateAndFetchUrl } from '../url-validator'
+import { isPrivateIp, validateAndFetchUrl } from '../url-validator.js'
 
 // ─── isPrivateIp — pure unit tests ────────────────────────────────
 

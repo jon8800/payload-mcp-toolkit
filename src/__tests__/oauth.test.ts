@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import type { Config, Payload, PayloadRequest } from 'payload'
 import { describe, expect, it, vi } from 'vitest'
-import { createOAuth, type OAuthOptions } from '../oauth'
-import type { Catalog } from '../oauth-permissions'
-import { consumeRecord, createOAuthCollection, OAUTH_COLLECTION, tokenKey, type OAuthRecord } from '../oauth-store'
+import { createOAuth, type OAuthOptions } from '../oauth.js'
+import type { Catalog } from '../oauth-permissions.js'
+import { consumeRecord, createOAuthCollection, OAUTH_COLLECTION, tokenKey, type OAuthRecord } from '../oauth-store.js'
 
 const origin = 'https://cms.example.com'
 const resource = `${origin}/api/mcp`

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Config, PayloadRequest } from 'payload'
 import { z } from 'zod'
-import { mcpToolkitPlugin } from '../index'
-import { buildScopeChecker, createInitializeServer } from '../registry'
-import { assertNoToolNameConflict } from '../conflict-detection'
-import type { ToolFactoryOutput } from '../registry'
+import { mcpToolkitPlugin } from '../index.js'
+import { buildScopeChecker, createInitializeServer } from '../registry.js'
+import { assertNoToolNameConflict } from '../conflict-detection.js'
+import type { ToolFactoryOutput } from '../registry.js'
 
 function baseConfig(): Config {
   return {

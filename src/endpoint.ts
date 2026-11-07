@@ -1,7 +1,7 @@
 import type { Endpoint, PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { createMcpHandler } from 'mcp-handler'
-import { getApiKeyContext } from './auth-strategy'
+import { getApiKeyContext } from './auth-strategy.js'
 
 export const MCP_BASE_PATH = '/api/mcp'
 export const MCP_ENDPOINT_PATH = '/mcp'

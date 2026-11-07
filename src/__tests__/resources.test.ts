@@ -6,8 +6,8 @@ import {
   introspectBlocks,
   buildBlockNestingMap,
   buildRelationshipGraph,
-} from '../introspection'
-import { generateResources } from '../resources'
+} from '../introspection.js'
+import { generateResources } from '../resources.js'
 
 const Heading: Block = {
   slug: 'heading',

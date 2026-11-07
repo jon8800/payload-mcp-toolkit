@@ -1,9 +1,9 @@
 import type { PayloadRequest } from 'payload'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { ZodObject, type ZodTypeAny } from 'zod'
-import { getApiKeyContext } from './auth-strategy'
-import type { InitializeServerForRequest } from './endpoint'
-import { LIMITED_SCOPE, stampMcpContext, type McpTextResponse } from './tools/_helpers'
+import { getApiKeyContext } from './auth-strategy.js'
+import type { InitializeServerForRequest } from './endpoint.js'
+import { LIMITED_SCOPE, stampMcpContext, type McpTextResponse } from './tools/_helpers.js'
 import {
   assertScopeAllows,
   buildRoutingTables,
@@ -13,8 +13,8 @@ import {
   type ScopeChecker,
   type ScopeDecision,
   type ToolRouting,
-} from './scope/policy'
-import { extractDataKeys, getRequestId, makeSafeLog, summariseArgs } from './scope/audit-log'
+} from './scope/policy.js'
+import { extractDataKeys, getRequestId, makeSafeLog, summariseArgs } from './scope/audit-log.js'
 
 // ─── Tool / Prompt / Resource shapes ──────────────────────────────────
 

@@ -6,7 +6,7 @@ import {
   jsonResponse,
   requireDraftCollection,
   stampMcpContext,
-  textResponse, populateDepth } from './_helpers'
+  textResponse, populateDepth } from './_helpers.js'
 
 const DEFAULT_LIST_LIMIT = 10
 

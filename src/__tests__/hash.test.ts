@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { describe, it, expect } from 'vitest'
-import { hashKey, verifyHash, extractBearerToken } from '../hash'
+import { hashKey, verifyHash, extractBearerToken } from '../hash.js'
 
 describe('hashKey', () => {
   it('returns 64-char hex output', () => {

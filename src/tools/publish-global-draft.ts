@@ -7,7 +7,7 @@ import {
   stampMcpContext,
   textResponse,
   verifyPublishSucceededDespiteError,
-} from './_helpers'
+} from './_helpers.js'
 
 /**
  * Promote a draft-enabled global's pending draft to published. Mirrors

@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react'
 import { CheckboxInput } from '@payloadcms/ui'
 import { toWords } from 'payload/shared'
-import { collectionActions, globalActions, summarize, toolsFor, type Catalog, type Choice, type Level } from '../oauth-permissions'
-import { ScopesMatrix } from './ScopesTable'
+import { collectionActions, globalActions, summarize, toolsFor, type Catalog, type Choice, type Level } from '../oauth-permissions.js'
+import { ScopesMatrix } from './ScopesTable.js'
 
 type Rows = { slug?: unknown; actions?: unknown }[]
 const ACTION_LABELS = { read: 'Read', create: 'Create', update: 'Update' }

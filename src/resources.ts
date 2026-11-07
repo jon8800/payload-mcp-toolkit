@@ -4,7 +4,7 @@ import type {
   CollectionSchema,
   GlobalSchema,
   RelationshipEdge,
-} from './types'
+} from './types.js'
 
 /**
  * Generate MCP resources that expose the introspected schema as static JSON.

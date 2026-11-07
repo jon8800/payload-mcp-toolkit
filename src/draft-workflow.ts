@@ -1,5 +1,5 @@
 import type { CollectionConfig, GlobalConfig } from 'payload'
-import { hasCollectionDrafts, hasGlobalDrafts } from './introspection'
+import { hasCollectionDrafts, hasGlobalDrafts } from './introspection.js'
 
 interface ComputeDraftCollectionsOptions {
   /** Per-collection draft behavior overrides */

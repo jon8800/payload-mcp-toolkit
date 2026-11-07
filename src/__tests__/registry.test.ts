@@ -5,7 +5,7 @@ import {
   createInitializeServer,
   type ToolFactoryOutput,
   type ToolRouting,
-} from '../registry'
+} from '../registry.js'
 
 // Test fixture: mirrors the production tool catalogue's routing so the
 // scope-checker tests stay stable across factory-internal changes. Each

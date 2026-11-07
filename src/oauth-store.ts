@@ -1,5 +1,5 @@
 import type { CollectionConfig, Payload } from 'payload'
-import { hashKey } from './hash'
+import { hashKey } from './hash.js'
 
 export const OAUTH_COLLECTION = 'payload-mcp-oauth'
 

@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { Config, Endpoint, Payload, PayloadRequest } from 'payload'
-import { extractBearerToken, hashKey, verifyHash } from './hash'
-import { clampScopes, permissionsFrom, summarize, type Catalog, type Choice, type Level } from './oauth-permissions'
-import { consumeRecord, isLive, readRecord, revokeGrant, tokenKey, writeRecord, OAUTH_COLLECTION, type OAuthRecord } from './oauth-store'
-import type { KeyScopes } from './types'
+import { extractBearerToken, hashKey, verifyHash } from './hash.js'
+import { clampScopes, permissionsFrom, summarize, type Catalog, type Choice, type Level } from './oauth-permissions.js'
+import { consumeRecord, isLive, readRecord, revokeGrant, tokenKey, writeRecord, OAUTH_COLLECTION, type OAuthRecord } from './oauth-store.js'
+import type { KeyScopes } from './types.js'
 
 const BASE = '/mcp/oauth'
 const READ = 'mcp:read'

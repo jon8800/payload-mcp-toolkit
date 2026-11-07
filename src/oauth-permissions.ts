@@ -1,7 +1,7 @@
 // Pure helpers shared by the OAuth server (src/oauth.ts) and the consent screen
 // (src/components/OAuthView.tsx). No Node or Payload runtime imports: the admin bundle loads this file.
-import { PRESET_ACTIONS, PRESET_GLOBAL_ACTIONS, PRESET_TOOL_DENY, type ResourceKind } from './scope/policy'
-import type { CollectionAction, GlobalAction, KeyScopes } from './types'
+import { PRESET_ACTIONS, PRESET_GLOBAL_ACTIONS, PRESET_TOOL_DENY, type ResourceKind } from './scope/policy.js'
+import type { CollectionAction, GlobalAction, KeyScopes } from './types.js'
 
 /** OAuth grants top out at editor: delete and global writes need an API key. */
 export type Level = 'read-only' | 'editor'

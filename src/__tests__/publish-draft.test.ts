@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createPublishDraftTool } from '../tools/publish-draft'
-import { createPublishGlobalDraftTool } from '../tools/publish-global-draft'
+import { createPublishDraftTool } from '../tools/publish-draft.js'
+import { createPublishGlobalDraftTool } from '../tools/publish-global-draft.js'
 
 function buildReq(overrides?: {
   update?: ReturnType<typeof vi.fn>

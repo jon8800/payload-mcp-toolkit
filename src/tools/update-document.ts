@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { CollectionSchema } from '../types'
+import type { CollectionSchema } from '../types.js'
 import {
   DRAFT_NOTE,
   errorMessage,
   getDocDisplayName,
   stampMcpContext,
-  textResponse, populateDepth } from './_helpers'
+  textResponse, populateDepth } from './_helpers.js'
 
 const MEDIA_SLUG = 'media'
 

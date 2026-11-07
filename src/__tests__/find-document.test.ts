@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { CollectionConfig } from 'payload'
-import { createFindDocumentTool } from '../tools/find-document'
-import type { CollectionSchema } from '../types'
+import { createFindDocumentTool } from '../tools/find-document.js'
+import type { CollectionSchema } from '../types.js'
 
 const fakeSchema: CollectionSchema = {
   slug: 'posts',

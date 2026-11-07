@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createCreateDocumentTool } from '../tools/create-document'
-import type { CollectionSchema } from '../types'
+import { createCreateDocumentTool } from '../tools/create-document.js'
+import type { CollectionSchema } from '../types.js'
 
 const schemas = new Map<string, CollectionSchema>([
   ['posts', { fields: [{ name: 'title' }] } as CollectionSchema],

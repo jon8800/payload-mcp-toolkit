@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentInstructions } from '../components/agentInstructions'
+import { agentInstructions } from '../components/agentInstructions.js'
 
 describe('agentInstructions', () => {
   const resource = 'https://app.example.com/api/mcp'

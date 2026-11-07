@@ -1,5 +1,5 @@
-import type { ToolFactoryOutput } from './registry'
-import type { OAuthOptions } from './oauth'
+import type { ToolFactoryOutput } from './registry.js'
+import type { OAuthOptions } from './oauth.js'
 
 /**
  * payload-mcp-toolkit configuration.

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { GlobalConfig } from 'payload'
-import { createFindGlobalTool } from '../tools/find-global'
-import type { GlobalSchema } from '../types'
+import { createFindGlobalTool } from '../tools/find-global.js'
+import type { GlobalSchema } from '../types.js'
 
 const fakeSchema: GlobalSchema = {
   slug: 'site-settings',

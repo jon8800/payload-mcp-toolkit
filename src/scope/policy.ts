@@ -1,4 +1,4 @@
-import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from '../types'
+import type { CollectionAction, GlobalAction, KeyScopes, ScopePreset } from '../types.js'
 
 // ─── Routing primitives ──────────────────────────────────────────────
 

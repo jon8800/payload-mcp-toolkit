@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createDeleteDocumentTool } from '../tools/delete-document'
-import type { CollectionSchema } from '../types'
+import { createDeleteDocumentTool } from '../tools/delete-document.js'
+import type { CollectionSchema } from '../types.js'
 
 const fakeSchema: CollectionSchema = {
   slug: 'posts',

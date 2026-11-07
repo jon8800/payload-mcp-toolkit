@@ -1,13 +1,13 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { BlockCatalog, BlockNestingMap } from '../types'
+import type { BlockCatalog, BlockNestingMap } from '../types.js'
 import {
   DRAFT_NOTE,
   errorMessage,
   getDocDisplayName,
   jsonResponse,
-  stampMcpContext, populateDepth } from './_helpers'
-import { applyOperation, errorResponse, validateBlockList } from './_layout-helpers'
+  stampMcpContext, populateDepth } from './_helpers.js'
+import { applyOperation, errorResponse, validateBlockList } from './_layout-helpers.js'
 
 /**
  * patchLayout — surgical wrapper that mutates a single document's blocks-typed

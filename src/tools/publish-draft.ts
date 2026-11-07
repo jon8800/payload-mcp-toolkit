@@ -7,7 +7,7 @@ import {
   snapshotPublishMarker,
   stampMcpContext,
   textResponse,
-  verifyPublishSucceededDespiteError, populateDepth } from './_helpers'
+  verifyPublishSucceededDespiteError, populateDepth } from './_helpers.js'
 
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {

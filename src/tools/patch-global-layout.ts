@@ -1,14 +1,14 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import type { BlockCatalog, BlockNestingMap } from '../types'
-import { DRAFT_NOTE, errorMessage, jsonResponse, slugEnum, stampMcpContext } from './_helpers'
+import type { BlockCatalog, BlockNestingMap } from '../types.js'
+import { DRAFT_NOTE, errorMessage, jsonResponse, slugEnum, stampMcpContext } from './_helpers.js'
 import {
   applyOperation,
   errorResponse,
   readPath,
   validateBlockList,
   writePath,
-} from './_layout-helpers'
+} from './_layout-helpers.js'
 
 /**
  * patchGlobalLayout — surgical wrapper that mutates a single blocks-typed
