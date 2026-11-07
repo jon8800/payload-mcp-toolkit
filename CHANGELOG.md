@@ -4,7 +4,9 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.10.0] - 2026-11-07
+## [0.11.0] - 2026-11-07
+
+This release skips 0.10.0. The `0.10.0-next.*` prereleases (npm tag `next`) are the Payload 4 beta line. A stable 0.10.0 would count as their final release, so hosts on `^0.10.0-next.1` would get this Payload 3 build. This release is for Payload 3.
 
 ### Fixed
 - `next build` no longer fails with "payload-mcp-toolkit v0.4 is the standalone successor to @payloadcms/plugin-mcp". The startup check searched each plugin's source text for `payload-mcp-api-keys`. When Next bundles the toolkit, it copies a helper that holds that slug into the toolkit's own plugin function, so the check found the toolkit itself. The check no longer reads source text. The toolkit's plugin function now carries a marker (`Symbol.for('payload-mcp-toolkit.plugin')`), and the check skips marked functions. An upstream `@payloadcms/plugin-mcp` that ran first is still caught, because its `payload-mcp-api-keys` collection is already in the config.
