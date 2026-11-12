@@ -89,7 +89,7 @@ describe('mcpToolkitPlugin integration', () => {
     const cfg = baseConfig() as Config
     function mcpPlugin() {}
     ;(cfg as { plugins: unknown[] }).plugins = [mcpPlugin as never]
-    expect(() => mcpToolkitPlugin()(cfg)).toThrow(/standalone successor/)
+    expect(() => mcpToolkitPlugin()(cfg)).toThrow(/also registered/)
   })
 
   it('throws when an existing collection takes the api-keys slug', () => {

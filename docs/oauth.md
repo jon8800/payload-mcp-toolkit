@@ -24,6 +24,10 @@ loginURL: (returnTo) => `/login?redirect=${encodeURIComponent(returnTo)}`
 
 Your login page must return to the supplied same-origin path after sign-in. The account must belong to the plugin's configured user collection. The policy runs again when users approve access, refresh tokens, or make MCP requests.
 
+Payload 4 ignores the session cookie on cross-site requests, and the AI app sends the user to `/api/mcp/oauth/authorize` from another site. So when that request carries the session cookie, the plugin answers with a short page that reloads the same URL from your site. The user sees the consent screen without signing in again. The cookie name follows your `cookiePrefix`.
+
+Do not also register `@payloadcms/plugin-mcp`: it serves the same `/api/mcp` and `/api/mcp/oauth/*` paths. The plugin stops at startup if both are registered.
+
 Payload custom endpoints cannot serve root discovery URLs. Add these rewrites to your host's `next.config` alongside its existing rewrites:
 
 ```js

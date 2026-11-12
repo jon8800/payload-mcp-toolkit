@@ -103,7 +103,7 @@ export interface ContentToolkitOptions {
    *     parameters: { since: z.string().optional() },
    *     routing: { kind: 'collection', action: 'read' },
    *     handler: async (args, req) => {
-   *       const { totalDocs } = await req.payload.count({ collection: 'memberships' })
+   *       const { totalDocs } = await req.payload.count({ collection: 'memberships', req, overrideAccess: false })
    *       return { content: [{ type: 'text', text: String(totalDocs) }] }
    *     },
    *   }],

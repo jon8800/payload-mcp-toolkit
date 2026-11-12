@@ -15,6 +15,9 @@ export interface OAuthRecord {
 export function createOAuthCollection(): CollectionConfig {
   return {
     slug: OAUTH_COLLECTION,
+    // Tokens are short-lived records: version history would keep used and revoked token hashes.
+    versions: false,
+    authorship: false,
     admin: { hidden: true },
     access: { create: () => false, read: () => false, update: () => false, delete: () => false },
     fields: [

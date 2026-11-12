@@ -25,10 +25,12 @@ async function seed() {
     collection: 'users',
     where: { email: { equals: 'admin@example.com' } },
     limit: 1,
+    overrideAccess: true,
   })
 
   if (existingUser.totalDocs === 0) {
     await payload.create({
+      overrideAccess: true,
       collection: 'users',
       data: {
         email: 'admin@example.com',
@@ -42,16 +44,19 @@ async function seed() {
   }
 
   const tech = await payload.create({
+    overrideAccess: true,
     collection: 'categories',
     data: { name: 'Technology', slug: 'technology', description: 'Tech writing.' },
   })
 
   const jane = await payload.create({
+    overrideAccess: true,
     collection: 'authors',
     data: { name: 'Jane Doe', slug: 'jane-doe', bio: 'Sample author.' },
   })
 
   await payload.create({
+    overrideAccess: true,
     collection: 'posts',
     data: {
       title: 'Hello world',
@@ -65,6 +70,7 @@ async function seed() {
   })
 
   await payload.create({
+    overrideAccess: true,
     collection: 'pages',
     data: {
       title: 'Home',

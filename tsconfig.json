@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "target": "ES2022",
     "module": "NodeNext",

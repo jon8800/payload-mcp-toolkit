@@ -2,30 +2,31 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/payload-v4-next]
   pull_request:
     branches: [main]
 
 jobs:
   ci:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node: [20, 22]
 
     steps:
       - uses: actions/checkout@v4
 
+      # Reads the pnpm version from package.json `packageManager`.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
+      # Payload 4 needs Node >=24.22.1.
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '24.22.3'
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - run: node --test scripts/release-target.test.mjs
+
+      - run: pnpm typecheck
 
       - run: pnpm test
 

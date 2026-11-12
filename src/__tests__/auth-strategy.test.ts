@@ -215,21 +215,55 @@ describe('composeScopes', () => {
     expect(out).toEqual({ preset: 'admin', tools: { deny: ['safeDelete'] } })
   })
 
-  it('preset custom + populated collectionScopes + explicit toolAllow: [] honours both axes', () => {
-    // Closes the prior gap where toolAllow: [] (operator intent: "no tools
-    // allowed") was treated identically to absent and silently dropped, so
-    // the row authenticated with a collection scope but no tool gate.
+  it('preset custom + populated collectionScopes + toolAllow: [] means no tool restriction', () => {
+    // Payload 4 reads an empty hasMany select as [] even when the on-write
+    // hook stored null. The toolAllow description promises this case
+    // "collapses to \"no tool restriction\"", so the read must agree.
     const out = composeScopes({
       ...baseRow,
       preset: 'custom',
       collectionScopes: [{ slug: 'posts', actions: ['read'] }],
       toolAllow: [],
     })
-    expect(out).toEqual({
-      collections: { posts: ['read'] },
-      tools: { allow: [] },
-    })
+    expect(out).toEqual({ collections: { posts: ['read'] } })
   })
+
+  // Scenario table across the custom-preset cells this rule crosses
+  // (collectionScopes × globalScopes × toolAllow, toolDeny fixed at []).
+  // Every row is the shape Payload 4 hands back on read.
+  const entry = { slug: 'posts', actions: ['read'] }
+  const gEntry = { slug: 'siteSettings', actions: ['read'] }
+  it.each([
+    ['null', 'null', '[]', { tools: { allow: [] } }],
+    ['[]', 'null', '[]', { collections: {}, tools: { allow: [] } }],
+    ['[]', '[]', '[]', { collections: {}, globals: {}, tools: { allow: [] } }],
+    ['[entry]', 'null', '[]', { collections: { posts: ['read'] } }],
+    ['[entry]', '[]', '[]', { collections: { posts: ['read'] }, globals: {} }],
+    ['null', '[entry]', '[]', { globals: { siteSettings: ['read'] } }],
+    ['[]', '[entry]', '[]', { collections: {}, globals: { siteSettings: ['read'] } }],
+    ['[entry]', 'null', '[entry]', { collections: { posts: ['read'] }, tools: { allow: ['findDocument'] } }],
+    ['null', 'null', '[entry]', { tools: { allow: ['findDocument'] } }],
+    ['[entry]', 'null', 'null', { collections: { posts: ['read'] } }],
+  ])('custom × collectionScopes %s × globalScopes %s × toolAllow %s', (cs, gs, ta, expected) => {
+    const pick = (v: string, e: unknown) => (v === 'null' ? null : v === '[]' ? [] : [e])
+    const out = composeScopes({
+      ...baseRow,
+      preset: 'custom',
+      collectionScopes: pick(cs, entry) as never,
+      globalScopes: pick(gs, gEntry) as never,
+      toolAllow: pick(ta, 'findDocument') as never,
+      toolDeny: [],
+    })
+    expect(out).toEqual(expected)
+  })
+
+  it.each(['admin', 'editor', 'read-only'] as const)(
+    'preset %s + [entry] collectionScopes + toolAllow: [] narrows by collection only',
+    (preset) => {
+      const out = composeScopes({ ...baseRow, preset, collectionScopes: [entry] as never, toolAllow: [], toolDeny: [] })
+      expect(out).toEqual({ preset, collections: { posts: ['read'] } })
+    },
+  )
 
   it('explicit toolDeny: [] carries no entries and emits nothing', () => {
     // toolDeny is a deny-list — an empty array has nothing to deny, so the
@@ -357,6 +391,45 @@ describe('createBearerStrategy.authenticate', () => {
         collection: 'payload-mcp-api-keys',
         where: { apiKeyIndex: { equals: hashKey('plaintext-key', SECRET) } },
       }),
+    )
+  })
+
+  it('matches the index under every secret in the Payload 4 keyring, active first', async () => {
+    const payload = Object.assign(buildPayload({ rows: [] }), {
+      encryptionKeyring: { all: [{ legacyKey: 'active-key' }, { legacyKey: 'previous-key' }] },
+    })
+    await strategy.authenticate!({
+      headers: makeHeaders('plaintext-key') as unknown as Headers,
+      payload: payload as never,
+    } as never)
+    expect(payload.findMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { apiKeyIndex: { in: [hashKey('plaintext-key', 'active-key'), hashKey('plaintext-key', 'previous-key')] } },
+      }),
+    )
+  })
+
+  it('uses one equals lookup when the keyring holds a single secret', async () => {
+    const payload = Object.assign(buildPayload({ rows: [] }), {
+      encryptionKeyring: { all: [{ legacyKey: 'only-key' }] },
+    })
+    await strategy.authenticate!({
+      headers: makeHeaders('plaintext-key') as unknown as Headers,
+      payload: payload as never,
+    } as never)
+    expect(payload.findMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { apiKeyIndex: { equals: hashKey('plaintext-key', 'only-key') } } }),
+    )
+  })
+
+  it('falls back to payload.secret when the keyring is empty', async () => {
+    const payload = Object.assign(buildPayload({ rows: [] }), { encryptionKeyring: { all: [] } })
+    await strategy.authenticate!({
+      headers: makeHeaders('plaintext-key') as unknown as Headers,
+      payload: payload as never,
+    } as never)
+    expect(payload.findMock).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { apiKeyIndex: { equals: hashKey('plaintext-key', SECRET) } } }),
     )
   })
 

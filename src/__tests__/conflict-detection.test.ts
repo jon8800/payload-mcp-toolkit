@@ -16,7 +16,7 @@ describe('assertNoUpstreamPlugin', () => {
 
   it('throws when a plugin function is named mcpPlugin', () => {
     function mcpPlugin() {}
-    expect(() => assertNoUpstreamPlugin([mcpPlugin as never])).toThrow(/standalone successor/)
+    expect(() => assertNoUpstreamPlugin([mcpPlugin as never])).toThrow(/also registered/)
   })
 
   it('does not read plugin source text: a function mentioning the upstream package or slug is not flagged', () => {

@@ -213,6 +213,53 @@ describe('OAuth website authorization', () => {
     expect(location.searchParams.get('redirect')).toBe(`/api/mcp/oauth/authorize?${query}`)
   })
 
+  describe('cross-site arrival with a session cookie (Payload 4 ignores the cookie cross-site)', () => {
+    it('answers with a page that reloads the same URL from this site', async () => {
+      const f = setup()
+      const query = f.authParams(await f.register(), { state: '"><script>x</script>' }).toString()
+      const response = await f.call(`/authorize?${query}`, 'GET', undefined, null, { 'sec-fetch-site': 'cross-site', cookie: 'a=1; payload-token=abc' })
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
+      expect(response.headers.get('cache-control')).toContain('no-store')
+      expect(response.headers.get('content-security-policy')).toContain("default-src 'none'")
+      const html = await response.text()
+      const target = `${origin}/api/mcp/oauth/authorize?${query}`
+      expect(html).toContain(`content="0;url=${target.replace(/&/g, '&#38;').replace(/"/g, '&#34;')}"`)
+      expect(html).not.toContain('<script>')
+      expect(f.records.size).toBe(0)
+    })
+
+    it('uses the host cookiePrefix', async () => {
+      const f = setup({}, { cookiePrefix: 'site' })
+      const query = f.authParams(await f.register()).toString()
+      const hop = await f.call(`/authorize?${query}`, 'GET', undefined, null, { 'sec-fetch-site': 'cross-site', cookie: 'site-token=abc' })
+      expect(hop.status).toBe(200)
+      const other = await f.call(`/authorize?${query}`, 'GET', undefined, null, { 'sec-fetch-site': 'cross-site', cookie: 'payload-token=abc' })
+      expect(other.status).toBe(303)
+    })
+
+    it.each([
+      ['same-origin request (the reload itself) with a cookie Payload still rejected', { 'sec-fetch-site': 'same-origin', cookie: 'payload-token=abc' }],
+      ['cross-site request without a session cookie', { 'sec-fetch-site': 'cross-site', cookie: 'payload-tokens=abc; my-payload-token=x' }],
+      ['request without fetch metadata', { cookie: 'payload-token=abc' }],
+    ])('goes to the login page for a %s', async (_name, headers) => {
+      const f = setup()
+      const query = f.authParams(await f.register()).toString()
+      const response = await f.call(`/authorize?${query}`, 'GET', undefined, null, headers)
+      expect(response.status).toBe(303)
+      expect(new URL(response.headers.get('location')!).pathname).toBe('/admin/login')
+    })
+
+    it('does not reload for a signed-in request, and connections reloads the same way', async () => {
+      const f = setup()
+      const signedIn = await f.call(`/authorize?${f.authParams(await f.register())}`, 'GET', undefined, account, { 'sec-fetch-site': 'cross-site', cookie: 'payload-token=abc' })
+      expect(new URL(signedIn.headers.get('location')!).pathname).toBe('/admin/mcp-authorize')
+      const connections = await f.call('/connections', 'GET', undefined, null, { 'sec-fetch-site': 'cross-site', cookie: 'payload-token=abc' })
+      expect(connections.status).toBe(200)
+      expect(await connections.text()).toContain(`url=${origin}/api/mcp/oauth/connections"`)
+    })
+  })
+
   it.each(['/admin', '/cms'])('redirects browser consent to the Payload view under %s with every parameter intact', async admin => {
     const f = setup({}, { routes: { admin } })
     const params = f.authParams(await f.register(), { state: 'return + / ? & = state', scope: 'mcp:read' })

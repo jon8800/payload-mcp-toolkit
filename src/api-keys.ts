@@ -186,6 +186,10 @@ export function createApiKeysCollection(
 
   return {
     slug,
+    // Payload 4 turns both on by default. Version history would keep revoked
+    // key hashes, and the `user` field already records who owns each key.
+    versions: false,
+    authorship: false,
     admin: {
       group: 'MCP',
       useAsTitle: 'name',

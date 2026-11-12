@@ -490,3 +490,21 @@ describe('createApiKeysCollection', () => {
     expect(out.toolAllow).toBeNull()
   })
 })
+
+describe('toolAllow description matches composeScopes on the Payload 4 read shape', () => {
+  it('"collapses to no tool restriction" with collection scopes, and deny-all without them', async () => {
+    const { composeScopes } = await import('../auth-strategy.js')
+    const field = findNamed(createApiKeysCollection(baseOptions).fields as Field[], 'toolAllow') as {
+      admin?: { description?: string }
+    }
+    expect(field.admin?.description).toContain('collapses to "no tool restriction"')
+    expect(field.admin?.description).toContain('treated as deny-all ONLY when no collection or global scopes are set')
+    // Payload 4 reads the empty hasMany select back as [], not null.
+    expect(
+      composeScopes({ preset: 'custom', collectionScopes: [{ slug: 'posts', actions: ['read'] }], globalScopes: null, toolAllow: [], toolDeny: [] } as never),
+    ).toEqual({ collections: { posts: ['read'] } })
+    expect(
+      composeScopes({ preset: 'custom', collectionScopes: null, globalScopes: null, toolAllow: [], toolDeny: [] } as never)?.tools,
+    ).toEqual({ allow: [] })
+  })
+})

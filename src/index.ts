@@ -20,6 +20,7 @@ import {
   type ToolFactoryOutput,
 } from './registry.js'
 import {
+  assertNoEndpointConflict,
   assertNoSlugConflict,
   assertNoToolNameConflict,
   assertNoUpstreamPlugin,
@@ -66,12 +67,13 @@ function resolveUserCollection(
 }
 
 /**
- * payload-mcp-toolkit — standalone Payload v3 MCP plugin.
+ * payload-mcp-toolkit — standalone Payload v4 MCP plugin.
  *
  * Owns the `/api/mcp` endpoint, the `payload-mcp-api-keys` collection,
  * bearer authentication via Payload's `auth.strategies` extension point,
- * and the per-tool scope check. Upstream `@payloadcms/plugin-mcp` is no
- * longer required (and is incompatible — see `assertNoUpstreamPlugin`).
+ * and the per-tool scope check. It is an alternative to `@payloadcms/plugin-mcp`; the
+ * two serve the same endpoints, so only one may be registered (see
+ * `assertNoUpstreamPlugin`).
  *
  * Zero-config usage:
  * ```ts
@@ -297,6 +299,7 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
       serverURL: incomingConfig.serverURL,
       oauth,
     })
+    assertNoEndpointConflict(incomingConfig.endpoints, [...mcpEndpoints, ...(oauth?.endpoints ?? [])])
 
     return {
       ...incomingConfig,
@@ -306,10 +309,11 @@ export function mcpToolkitPlugin(options: ContentToolkitOptions = {}): Plugin {
           ...incomingConfig.admin?.components,
           views: {
             ...incomingConfig.admin?.components?.views,
-            mcpAuthorize: { path: '/mcp-authorize', exact: true, meta: { title: 'Connect your account' }, Component: {
+            // Keys differ from @payloadcms/plugin-mcp's `mcpAuthorize`, so neither view replaces the other.
+            mcpToolkitAuthorize: { path: '/mcp-authorize', exact: true, meta: { title: 'Connect your account' }, Component: {
               path: 'payload-mcp-toolkit/client#OAuthView', clientProps: { mode: 'authorize' },
             } },
-            mcpConnections: { path: '/mcp-connections', exact: true, meta: { title: 'AI connections' }, Component: {
+            mcpToolkitConnections: { path: '/mcp-connections', exact: true, meta: { title: 'AI connections' }, Component: {
               path: 'payload-mcp-toolkit/client#OAuthView', clientProps: { mode: 'connections' },
             } },
           },

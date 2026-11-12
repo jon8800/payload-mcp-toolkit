@@ -4,6 +4,30 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0-next.0] - 2026-11-12
+
+The first Payload 4 release with every 0.11 feature. It is published under the npm tag `next`. The `latest` tag stays on 0.11.x for Payload 3.
+
+### Upgrading from 0.11 (Payload 3)
+- Install `payload-mcp-toolkit@next`. Peer dependencies: `payload` and `@payloadcms/ui` `^4.0.0-beta.8`. Node `>=24.22.1`.
+- Regenerate the host import map and types.
+- Generate a migration for production databases. Payload 4 adds `apiKeyLast4` to the `payload-mcp-api-keys` collection, and adds session columns to auth collections. The toolkit's own collections keep version history and authorship turned off, so they gain no `_versions` tables and no `createdBy`/`updatedBy` fields.
+- Keys created before Payload 3.46 and never re-saved stop working on Payload 4 (Payload removed the sha1 fallback). Generate a new key for those.
+- Rename references to the admin views if you customized them: the view keys are now `mcpToolkitAuthorize` and `mcpToolkitConnections`. The URLs (`/admin/mcp-authorize`, `/admin/mcp-connections`) do not change.
+- Do not register `@payloadcms/plugin-mcp` next to the toolkit. Both serve `/api/mcp` and `/api/mcp/oauth/{authorize,register,token}`.
+
+### Fixed
+- A Custom key with collection or global scopes and an empty tool list denied every tool on Payload 4. Payload 4 reads an empty multi-select as `[]` instead of `null`. The key check now treats that `[]` as "no tool restriction", which is what the field description and the save hook already said. With no collection or global scopes, an empty tool list still denies every tool.
+- Signed-in users who arrive from Claude or ChatGPT no longer get the login form again. Payload 4 ignores the session cookie on cross-site requests, so `/api/mcp/oauth/authorize` (and `/connections`) answers such a request with a short page that reloads the same URL from the site.
+- The scope matrices and the OAuth screens use Payload 4's tokens (`--color-*`, `--spacer-*`, `--radius-*`, `--text-*`). The `--theme-*` and `--base` variables no longer exist. Headings and lists on the OAuth screens are styled again after Payload 4's CSS reset.
+
+### Changed
+- The bearer check matches API keys under every secret in Payload 4's secret keyring, so keys keep working after a secret rotation.
+- The startup check finds `@payloadcms/plugin-mcp` by its Payload 4 plugin slug, which survives minification. A second check stops startup if another plugin already registered one of the toolkit's endpoints (same method and path). The toolkit registers itself in Payload's `plugins` map as `payload-mcp-toolkit`.
+- `OAuthView` uses Payload 4's `Button` size `medium` and `Banner` type `danger`.
+- Publishing reads the npm tag from the version: `x.y.z-next.N` publishes to `next`, others to `latest`. The tag must match `package.json`.
+- The dev app runs on Payload 4 and Next 16.4 with Turbopack, and runs the built `dist`.
+
 ## [0.11.0] - 2026-11-07
 
 This release skips 0.10.0. The `0.10.0-next.*` prereleases (npm tag `next`) are the Payload 4 beta line. A stable 0.10.0 would count as their final release, so hosts on `^0.10.0-next.1` would get this Payload 3 build. This release is for Payload 3.

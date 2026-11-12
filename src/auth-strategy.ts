@@ -233,9 +233,17 @@ export function composeScopes(
     ? (row.toolDeny as unknown[]).filter((t): t is string => typeof t === 'string')
     : []
   const emitDeny = toolDeny.length > 0
+  // Same rule as the on-write hook in api-keys.ts: under Custom, an empty
+  // toolAllow next to populated collection or global scopes means "no tool
+  // restriction". Payload 4 reads an empty hasMany select back as `[]` even
+  // when the hook stored null, so this read must not treat that `[]` as
+  // deny-all. With no resource scopes, `[]` still denies every tool.
+  const hasResourceScope =
+    (hasCollectionScopesField && (row.collectionScopes as unknown[]).length > 0) ||
+    (hasGlobalScopesField && (row.globalScopes as unknown[]).length > 0)
   const emitToolAllow =
     hasToolAllowField &&
-    (treatEmptyAsScope || (row.toolAllow as unknown[]).length > 0)
+    ((row.toolAllow as unknown[]).length > 0 || (treatEmptyAsScope && !hasResourceScope))
 
   if (emitToolAllow || emitDeny) {
     out.tools = {}
@@ -273,8 +281,14 @@ export function createBearerStrategy(options: CreateBearerStrategyOptions): Auth
       const token = extractBearerToken(headerValue ?? null)
       if (!token) return { user: null }
 
-      const keyHash = hashKey(token, payload.secret)
-      const where: Where = { apiKeyIndex: { equals: keyHash } }
+      // Payload 4 writes the index under the active secret but keeps older
+      // secrets in its keyring, so a key indexed before a rotation still works.
+      const secrets = payload.encryptionKeyring?.all?.map((key) => key.legacyKey) ?? [payload.secret]
+      const keyHashes = [...new Set(secrets.length > 0 ? secrets : [payload.secret])].map((s) => hashKey(token, s))
+      const where: Where =
+        keyHashes.length === 1
+          ? { apiKeyIndex: { equals: keyHashes[0] } }
+          : { apiKeyIndex: { in: keyHashes } }
 
       let docs: ApiKeyRow[] = []
       try {

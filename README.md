@@ -1,6 +1,6 @@
 # payload-mcp-toolkit
 
-A Payload CMS v3 plugin that lets AI apps such as Claude and ChatGPT read and edit your content over MCP.
+A Payload CMS 4 plugin that lets AI apps such as Claude and ChatGPT read and edit your content over MCP.
 
 It reads your Payload config when the server starts and builds tools, prompts and resources from your collections, globals and blocks. It serves them at `/api/mcp`. Clients connect in one of two ways:
 
@@ -12,10 +12,12 @@ Payload access control applies to every call. Tools run as the signed-in user or
 ## Install
 
 ```bash
-pnpm add payload-mcp-toolkit
+pnpm add payload-mcp-toolkit@next
 ```
 
-Peer dependencies: `payload` ^3, `@payloadcms/ui` ^3, `zod` ^3.25 or ^4.
+The `next` tag (0.12) is for Payload 4. Peer dependencies: `payload` and `@payloadcms/ui` ^4.0.0-beta.8, `zod` ^3.25 or ^4. Node >=24.22.1. For Payload 3, install `payload-mcp-toolkit@latest` (0.11).
+
+Payload 4 ships its own MCP plugin, `@payloadcms/plugin-mcp`. It serves the same `/api/mcp` endpoints, so register only one of the two. The toolkit stops at startup with a clear error if both are registered.
 
 ```ts
 // payload.config.ts
@@ -44,7 +46,7 @@ Schema changes add database tables or columns. On Postgres or SQLite with `push:
 
 ## API keys
 
-Create a key in **MCP → API Keys**. The admin shows the full key once. After that you see only its first 8 characters.
+Create a key in **MCP → API Keys**: click **Generate new API key**, copy the key, then save. After saving, the admin shows only its last 4 characters, and the **Key Prefix** field keeps its first 8.
 
 ```http
 POST /api/mcp
@@ -71,7 +73,7 @@ A key limited to some collections or globals also has these rules:
 - `findDocument` refuses filters with a dotted path.
 - Search, reference and upload tools are off, because they reach across every collection.
 
-Keys also have `expiresAt`, `revokedAt` and `lastUsedAt`.
+Keys also have `expiresAt`, `revokedAt` and `lastUsedAt`. **Revoke API key** in the key's Account box deletes the key itself.
 
 ## Website sign-in (OAuth)
 
@@ -163,6 +165,7 @@ Custom tools go through the same permission check and audit log as the built-in 
 
 ## Upgrading
 
+- **0.11 → 0.12 (Payload 4):** see the 0.12.0-next.0 entry in [CHANGELOG.md](CHANGELOG.md).
 - **0.8 → 0.9:** OAuth is new and off by default. Without it, nothing changes for API-key sites, except one rule. Keys limited to some collections or globals now get linked entries as IDs only, and `findDocument` refuses dotted filter paths for them. Regenerate your import map.
 - **Older versions:** see [CHANGELOG.md](CHANGELOG.md).
 
@@ -172,12 +175,12 @@ Custom tools go through the same permission check and audit log as the built-in 
 
 ## Development
 
-The `dev/` folder is a working Payload and Next.js app that uses the plugin source directly.
+The `dev/` folder is a working Payload and Next.js app. It runs the built `dist`, so `pnpm dev` builds first. Rebuild (`pnpm build`) and restart after source changes.
 
 ```bash
 pnpm install
 cp dev/.env.example dev/.env
-pnpm dev    # http://localhost:3000
+pnpm dev    # http://localhost:3000; Node 24.22.3 comes from pnpm-workspace.yaml
 pnpm test
 pnpm build
 ```

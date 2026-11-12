@@ -1,10 +1,15 @@
-import type { CollectionConfig, Plugin } from 'payload'
+import type { CollectionConfig, Endpoint, Plugin } from 'payload'
 import { API_KEYS_DEFAULT_SLUG } from './api-keys.js'
 
+/** Payload 4's `definePlugin` slug for the official MCP plugin. */
+export const UPSTREAM_PLUGIN_SLUG = '@payloadcms/plugin-mcp'
+/** This toolkit's slug in Payload 4's `plugins` map, for cross-plugin discovery. */
+export const TOOLKIT_PLUGIN_SLUG = 'payload-mcp-toolkit'
+
 const UPGRADE_HINT =
-  'payload-mcp-toolkit v0.4 is the standalone successor to @payloadcms/plugin-mcp. ' +
-  'Remove the upstream `mcpPlugin(...)` from your `plugins[]` (and the package from your dependencies) before upgrading. ' +
-  'See README "Upgrading from 0.3.x".'
+  'payload-mcp-toolkit: @payloadcms/plugin-mcp is also registered. ' +
+  'Both plugins serve /api/mcp and /api/mcp/oauth/{authorize,register,token}, so one would answer requests meant for the other. ' +
+  'Register only one of them in `plugins[]`.'
 
 // Symbol.for, not Symbol(): a bundled copy and an external copy of this
 // package must still recognise each other's plugin functions.
@@ -13,6 +18,7 @@ const TOOLKIT_PLUGIN = Symbol.for('payload-mcp-toolkit.plugin')
 /** Tags a plugin function as this toolkit's own, so the upstream check skips it. */
 export function markToolkitPlugin<T extends Plugin>(plugin: T): T {
   Object.defineProperty(plugin, TOOLKIT_PLUGIN, { value: true })
+  plugin.slug = TOOLKIT_PLUGIN_SLUG
   return plugin
 }
 
@@ -24,24 +30,25 @@ export function isToolkitPlugin(plugin: unknown): boolean {
 }
 
 /**
- * Returns true when the plugin is the upstream `mcpPlugin` / `withMcp`
- * function itself. Never reads function source text: bundlers inline helpers
- * (and the api-keys slug with them) into the toolkit's own plugin function,
- * so a source search matched the toolkit and failed `next build`. The signal
- * that does not depend on bundling is the built config — an api-keys
- * collection that is already present — which `assertNoSlugConflict` checks.
+ * Returns true when the plugin is the upstream `@payloadcms/plugin-mcp`.
+ * Payload 4's `definePlugin` gives it a stable `slug`, which survives
+ * minification. The function-name check covers an unminified 3.x copy.
+ * Never reads function source text: bundlers inline helpers (and the
+ * api-keys slug with them) into the toolkit's own plugin function, so a
+ * source search matched the toolkit and failed `next build`.
  */
 function looksLikeUpstreamPlugin(plugin: unknown): boolean {
   if (typeof plugin !== 'function') return false
   if (isToolkitPlugin(plugin)) return false
+  if ((plugin as { slug?: unknown }).slug === UPSTREAM_PLUGIN_SLUG) return true
   const fnName = ((plugin as { name?: unknown }).name ?? '').toString()
   return fnName === 'mcpPlugin' || fnName === 'withMcp'
 }
 
 /**
  * Throws if `@payloadcms/plugin-mcp` is also registered in the host config.
- * Two MCP plugins racing for the same collection slug produces a confusing
- * boot crash inside Payload — this surfaces a clearer migration message.
+ * Both plugins answer on the same endpoint paths, so Payload would silently
+ * route every MCP request to whichever registered first.
  */
 export function assertNoUpstreamPlugin(plugins: Plugin[] | undefined): void {
   if (!plugins || plugins.length === 0) return
@@ -68,6 +75,28 @@ export function assertNoSlugConflict(
         `payload-mcp-toolkit: a collection with slug "${apiKeysSlug}" is already registered. ` +
           'This is usually the upstream `@payloadcms/plugin-mcp` still being active. ' +
           'Remove it before upgrading to v0.4, or pass a different slug via `apiKeyCollection.slug`.',
+      )
+    }
+  }
+}
+
+/**
+ * Throws if another plugin or the host already registered one of the
+ * toolkit's endpoints (same method and path). Payload runs the first match,
+ * so a duplicate would silently disable one of them.
+ */
+export function assertNoEndpointConflict(
+  existing: Endpoint[] | undefined,
+  added: Endpoint[],
+): void {
+  if (!existing || existing.length === 0) return
+  const taken = new Set(existing.map((e) => `${e.method.toLowerCase()} ${e.path}`))
+  for (const endpoint of added) {
+    const key = `${endpoint.method.toLowerCase()} ${endpoint.path}`
+    if (taken.has(key)) {
+      throw new Error(
+        `payload-mcp-toolkit: the endpoint ${endpoint.method.toUpperCase()} /api${endpoint.path} is already registered. ` +
+          'This is usually @payloadcms/plugin-mcp. Register only one MCP plugin.',
       )
     }
   }

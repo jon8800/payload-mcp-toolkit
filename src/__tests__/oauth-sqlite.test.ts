@@ -29,7 +29,7 @@ beforeAll(async () => {
     db: sqliteAdapter({ client: { url: 'file::memory:' }, push: true }),
     collections: [...config.collections, createOAuthCollection()], typescript: { autoGenerate: false },
   }) })
-  const created = await payload.create({ collection: 'users', data: { email: 'oauth@example.com', password: 'integration-password-1!' } })
+  const created = await payload.create({ collection: 'users', data: { email: 'oauth@example.com', password: 'integration-password-1!' }, overrideAccess: true })
   user = { ...created, collection: 'users' }
 })
 

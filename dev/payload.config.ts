@@ -27,6 +27,8 @@ export default buildConfig({
   globals: [SiteSettings],
   blocks: [...allSectionBlocks, ...allLeafBlocks],
   editor: lexicalEditor(),
+  // Other local Payload apps also use the default payload-token cookie on localhost.
+  cookiePrefix: 'mcp-toolkit-dev',
   secret: process.env.PAYLOAD_SECRET || 'dev-secret-not-for-production',
   serverURL: process.env.SITE_URL || 'http://localhost:3000',
   typescript: {

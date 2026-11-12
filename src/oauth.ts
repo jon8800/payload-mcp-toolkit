@@ -34,6 +34,11 @@ const randomToken = () => randomBytes(32).toString('base64url')
 const expires = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString()
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', Pragma: 'no-cache' } })
 const redirect = (url: string) => new Response(null, { status: 303, headers: { Location: url, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } })
+const escapeHTML = (value: string) => value.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
+/** A page that opens `url` itself. A server redirect would keep the request cross-site. */
+const reload = (url: string) => new Response(
+  `<!doctype html><meta charset="utf-8"><meta name="referrer" content="no-referrer"><meta http-equiv="refresh" content="0;url=${escapeHTML(url)}"><title>Continue</title><a href="${escapeHTML(url)}">Continue</a>`,
+  { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'", 'Referrer-Policy': 'no-referrer' } })
 
 // The consent form carries the permission choice, which grows with the number of collections.
 async function parameters(req: PayloadRequest, limit = 16_384): Promise<URLSearchParams> {
@@ -105,9 +110,17 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   function login(req: PayloadRequest): Response {
     const requestURL = new URL(req.url!)
     const returnTo = `${requestURL.pathname}${requestURL.search}`
+    // Payload 4 ignores the session cookie on cross-site requests, and the AI app's
+    // redirect here is cross-site. A signed-in user would get the login form again,
+    // so reload the same URL from this site once: that request counts as same-origin.
+    if (req.headers.get('sec-fetch-site') === 'cross-site' && hasSessionCookie(req)) return reload(`${issuer}${returnTo}`)
     const url = new URL(options.loginURL?.(returnTo) ?? `${config.routes?.admin ?? '/admin'}/login?redirect=${encodeURIComponent(returnTo)}`, issuer)
     if (url.origin !== issuer) throw new OAuthError('invalid_request')
     return redirect(url.href)
+  }
+  function hasSessionCookie(req: PayloadRequest): boolean {
+    const name = `${config.cookiePrefix ?? 'payload'}-token=`
+    return (req.headers.get('cookie') ?? '').split(';').some(part => part.trim().startsWith(name))
   }
   function csrf(req: PayloadRequest, value: Record<string, unknown>) {
     if (req.headers.get('origin') !== issuer || String(value.user) !== String(req.user?.id)) throw new OAuthError('access_denied', 403)
