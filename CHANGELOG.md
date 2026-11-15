@@ -4,6 +4,20 @@ All notable changes are tracked here. The format roughly follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-11-15
+
+This is 0.11.1, not 0.12.0. The `0.12.0-next.*` prereleases (npm tag `next`) are the Payload 4 beta line. A stable 0.12.0 would count as their final release, so hosts on `^0.12.0-next.0` would get this Payload 3 build.
+
+### Fixed
+- `publishDraft` on a collection that uses `@payloadcms/plugin-nested-docs` failed with "The following field is invalid: Breadcrumbs N > Doc", while the admin UI published the same draft. The tools passed the document ID as a string, such as `"12"`. Payload's draft read copies that ID into `originalDoc`, so nested-docs wrote `"12"` into the page's own breadcrumb, and the relationship check for number IDs rejected it. Payload's REST routes turn the ID into a number first. The tools now do the same (`parseDocumentId`) in `findDocument`, `updateDocument`, `patchLayout`, `publishDraft`, `schedulePublish`, `deleteDocument`, `safeDelete` and `listVersions`. A test runs the real nested-docs plugin on SQLite.
+- Claude Code can sign in with OAuth. Claude Code listens on `http://localhost:<random port>/callback`. HTTP loopback callbacks (`localhost`, `127.0.0.1`, `[::1]`) now match on any port, as RFC 8252 section 7.3 asks. Scheme, host, path and query must still match. HTTPS callbacks stay exact. `http://localhost/callback` and `http://127.0.0.1/callback` are now default trusted callbacks, so sites need no extra config. The authorization code is bound to the exact callback the client sent, port included.
+
+### Changed
+- `findDocument` lists (no `documentId`) return summary fields only, at depth 0: `id`, the `useAsTitle` field, `title`, `name`, `slug`, `_status`, `updatedAt`. A list of 5 pages with layouts had returned about 489,000 characters. The response has a `note` that names the options for more. Single-document reads stay complete, at depth 1.
+- New `select` option (a list of field paths, such as `["title", "meta.description"]`) on `findDocument`, `findGlobal`, `searchContent`, `resolveReference`, `listVersions` and `listGlobalVersions`. New `full: true` on `findDocument` and `findGlobal`.
+- Linked uploads in `findDocument` and `findGlobal` leave out `sizes` (every resized image copy) unless `full: true`.
+- `listVersions` and `listGlobalVersions` take `depth` (default 0). Before, they used Payload's default depth and filled in every relationship of every version they read. `listVersions` and `searchContent` read only the fields they return. `resolveReference` reads at depth 0.
+
 ## [0.11.0] - 2026-11-07
 
 This release skips 0.10.0. The `0.10.0-next.*` prereleases (npm tag `next`) are the Payload 4 beta line. A stable 0.10.0 would count as their final release, so hosts on `^0.10.0-next.1` would get this Payload 3 build. This release is for Payload 3.

@@ -84,7 +84,7 @@ mcpToolkitPlugin({
 })
 ```
 
-Users add `https://YOUR-SITE/api/mcp` as a custom connector in Claude, or in ChatGPT with Developer mode on. Then they sign in and approve access. The approve screen offers the same choices as a Custom key, capped at `access`. Delete and global writes are never allowed this way.
+Users add `https://YOUR-SITE/api/mcp` as a custom connector in Claude, or in ChatGPT with Developer mode on. Then they sign in and approve access. Claude Code works with no extra config: run `claude mcp add --transport http my-site https://YOUR-SITE/api/mcp`, then `/mcp` to sign in. The approve screen offers the same choices as a Custom key, capped at `access`. Delete and global writes are never allowed this way.
 
 The plugin also adds:
 
@@ -99,7 +99,7 @@ Tools for versions and publishing appear only for collections and globals with d
 
 | Tool | What it does |
 |---|---|
-| `findDocument` | Read by ID or `where` filter. Draft results include a preview link. |
+| `findDocument` | Read by ID or `where` filter. Draft results include a preview link. See [Response size](#response-size). |
 | `searchContent` | Find entries by text, status, recent changes or missing fields. |
 | `resolveReference` | Look up IDs by name, title or slug, for relationship fields. |
 | `createDocument` | Create an entry. Draft collections save a draft. |
@@ -112,6 +112,19 @@ Tools for versions and publishing appear only for collections and globals with d
 | `deleteDocument` | Delete without checking links. |
 | `findGlobal`, `updateGlobal`, `patchGlobalLayout` | The same for globals. |
 | `publishGlobalDraft`, `listGlobalVersions`, `restoreGlobalVersion` | Draft tools for globals. |
+
+### Response size
+
+Page layouts and rich text are large. A list of 5 pages with full layouts once returned about 489,000 characters. The read tools keep responses small by default:
+
+- **Lists** (`findDocument` without `documentId`) return summary fields only: `id`, the `useAsTitle` field, `title`, `name`, `slug`, `_status` and `updatedAt`, at depth 0. The response has a `note` that says how to get more.
+- **One document** (`findDocument` with `documentId`, `findGlobal`) comes back complete, at depth 1.
+- **`select`** picks fields on `findDocument`, `findGlobal`, `searchContent`, `resolveReference`, `listVersions` and `listGlobalVersions`. Pass field paths, for example `["title", "meta.description"]`. Dotted paths reach into group and array fields. The `id` is always included.
+- **`full: true`** on `findDocument` returns whole documents in a list.
+- **Linked uploads** leave out `sizes` (every resized copy of the image). `url`, `alt`, `filename` and the dimensions stay. `full: true` keeps `sizes`.
+- **`depth`** is respected wherever you pass it, including draft reads and version lists. Version lists default to depth 0.
+
+Write tools (`createDocument`, `updateDocument`, `publishDraft` and the rest) answer with a short text summary, not the document.
 
 **Prompts:** `contentModelOverview`, `blockCompositionGuide`, `draftWorkflowGuide`.
 
@@ -163,6 +176,7 @@ Custom tools go through the same permission check and audit log as the built-in 
 
 ## Upgrading
 
+- **0.11.0 → 0.11.1:** `findDocument` lists now return summary fields at depth 0. Agents that need whole documents in a list should pass `select` or `full: true`, or read by `documentId`. Single-document reads are unchanged, except that linked uploads leave out `sizes` unless `full: true`.
 - **0.8 → 0.9:** OAuth is new and off by default. Without it, nothing changes for API-key sites, except one rule. Keys limited to some collections or globals now get linked entries as IDs only, and `findDocument` refuses dotted filter paths for them. Regenerate your import map.
 - **Older versions:** see [CHANGELOG.md](CHANGELOG.md).
 
