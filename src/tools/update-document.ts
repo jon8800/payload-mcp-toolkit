@@ -6,7 +6,7 @@ import {
   errorMessage,
   getDocDisplayName,
   stampMcpContext,
-  textResponse, populateDepth } from './_helpers.js'
+  textResponse, populateDepth, parseDocumentId } from './_helpers.js'
 
 const MEDIA_SLUG = 'media'
 
@@ -95,7 +95,7 @@ export function createUpdateDocumentTool(
         const doc = await req.payload.update({
           depth: populateDepth(req),
           collection: collection as any,
-          id: documentId,
+          id: parseDocumentId(req, collection, documentId),
           data: data as any,
           draft: isDraftCollection,
           req,

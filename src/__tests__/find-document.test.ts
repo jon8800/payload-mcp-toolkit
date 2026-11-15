@@ -162,3 +162,40 @@ describe('findDocument', () => {
     expect(result.content[0]!.text).toMatch(/Error reading from posts/)
   })
 })
+
+describe('findDocument defaults match its description', () => {
+  const tool = createFindDocumentTool(new Map([['posts', fakeSchema]]), new Set(['posts']), new Map([['posts', draftCollectionConfig]]), undefined, true)
+
+  it('lists summary fields at depth 0, and reads one document complete at depth 1', async () => {
+    expect(tool.description).toContain('A list returns summary fields only (id, title or name, slug, _status, updatedAt) at depth 0')
+    expect(tool.parameters.depth.description).toContain('Default 0 for lists, 1 for a single document')
+    const req = buildReq()
+    req.payload.find.mockResolvedValue({ docs: [], totalDocs: 0 })
+    req.payload.findByID.mockResolvedValue({ id: 'a' })
+
+    await tool.handler({ collection: 'posts' }, req as never, {})
+    expect(req.payload.find).toHaveBeenLastCalledWith(expect.objectContaining({
+      depth: 0, select: { title: true, name: true, slug: true, _status: true, updatedAt: true },
+    }))
+    await tool.handler({ collection: 'posts', full: true }, req as never, {})
+    expect(req.payload.find.mock.lastCall![0]).not.toHaveProperty('select')
+    await tool.handler({ collection: 'posts', select: ['title', 'meta.description'], depth: 2 }, req as never, {})
+    expect(req.payload.find).toHaveBeenLastCalledWith(expect.objectContaining({ depth: 2, select: { title: true, meta: { description: true } } }))
+
+    await tool.handler({ collection: 'posts', documentId: 'a' }, req as never, {})
+    expect(req.payload.findByID).toHaveBeenLastCalledWith(expect.objectContaining({ depth: 1 }))
+    expect(req.payload.findByID.mock.lastCall![0]).not.toHaveProperty('select')
+  })
+
+  it('passes numeric IDs as numbers on number-ID databases, the same as Payload REST routes', async () => {
+    const req = { ...buildReq(), payload: { ...buildReq().payload, db: { defaultIDType: 'number' }, collections: { posts: {} } } }
+    req.payload.findByID.mockResolvedValue({ id: 12 })
+    await tool.handler({ collection: 'posts', documentId: '12' }, req as never, {})
+    expect(req.payload.findByID).toHaveBeenLastCalledWith(expect.objectContaining({ id: 12 }))
+    await tool.handler({ collection: 'posts', documentId: '64f0c0ffee' }, req as never, {})
+    expect(req.payload.findByID).toHaveBeenLastCalledWith(expect.objectContaining({ id: '64f0c0ffee' }))
+    req.payload.collections.posts = { customIDType: 'text' }
+    await tool.handler({ collection: 'posts', documentId: '12' }, req as never, {})
+    expect(req.payload.findByID).toHaveBeenLastCalledWith(expect.objectContaining({ id: '12' }))
+  })
+})

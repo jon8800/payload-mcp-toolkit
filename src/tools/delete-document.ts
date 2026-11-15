@@ -5,7 +5,7 @@ import {
   errorMessage,
   getDocDisplayName,
   stampMcpContext,
-  textResponse, populateDepth } from './_helpers.js'
+  textResponse, populateDepth, parseDocumentId } from './_helpers.js'
 
 interface DeleteDocumentArgs {
   collection: string
@@ -49,7 +49,7 @@ export function createDeleteDocumentTool(collectionSchemas: Map<string, Collecti
         const doc = await req.payload.delete({
           depth: populateDepth(req),
           collection: collection as never,
-          id: documentId,
+          id: parseDocumentId(req, collection, documentId),
           req,
           overrideAccess: false,
           user: req.user,

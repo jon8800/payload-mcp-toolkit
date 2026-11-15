@@ -7,7 +7,7 @@ import {
   snapshotPublishMarker,
   stampMcpContext,
   textResponse,
-  verifyPublishSucceededDespiteError, populateDepth } from './_helpers.js'
+  verifyPublishSucceededDespiteError, populateDepth, parseDocumentId } from './_helpers.js'
 
 export function createPublishDraftTool(draftCollections: Set<string>) {
   return {
@@ -37,6 +37,7 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
       if (guard) return guard
 
       stampMcpContext(req)
+      const id = parseDocumentId(req, collection, documentId)
 
       // Snapshot the doc's pre-update `updatedAt` so the recovery branch
       // below can distinguish "this attempt landed despite a post-write
@@ -45,14 +46,14 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
       const preMarker = await snapshotPublishMarker(req, {
         kind: 'collection',
         slug: collection,
-        id: documentId,
+        id,
       })
 
       try {
         const doc = await req.payload.update({
           depth: populateDepth(req),
           collection: collection as any,
-          id: documentId,
+          id,
           data: { _status: 'published' } as any,
           req,
           overrideAccess: false,
@@ -78,7 +79,7 @@ export function createPublishDraftTool(draftCollections: Set<string>) {
         // failure of the current attempt.
         const liveDoc = await verifyPublishSucceededDespiteError(
           req,
-          { kind: 'collection', slug: collection, id: documentId },
+          { kind: 'collection', slug: collection, id },
           preMarker,
         )
         if (liveDoc) {

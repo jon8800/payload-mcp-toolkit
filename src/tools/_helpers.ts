@@ -46,7 +46,7 @@ function asIsoString(v: unknown): string | undefined {
 }
 
 export type PublishVerifyTarget =
-  | { kind: 'collection'; slug: string; id: string }
+  | { kind: 'collection'; slug: string; id: string | number }
   | { kind: 'global'; slug: string; locale?: string }
 
 /**
@@ -171,6 +171,85 @@ export const LIMITED_SCOPE = 'mcpLimitedScope'
  */
 export function populateDepth(req: PayloadRequest, requested?: number): number | undefined {
   return req.context?.[LIMITED_SCOPE] ? 0 : requested
+}
+
+/**
+ * Payload's REST routes turn a numeric document ID string into a number before calling an
+ * operation; MCP arguments arrive as strings, so do the same. Without it, Payload's draft read
+ * (`getLatestCollectionVersion`) hands hooks `originalDoc.id === "12"`, and nested-docs writes that
+ * string into the self breadcrumb, which fails number-ID relationship validation on publish.
+ */
+export function parseDocumentId(req: PayloadRequest, collection: string, id: string): string | number {
+  const payload = req.payload as unknown as {
+    collections?: Record<string, { customIDType?: string } | undefined>
+    db?: { defaultIDType?: string }
+  }
+  const idType = payload.collections?.[collection]?.customIDType ?? payload.db?.defaultIDType
+  return idType === 'number' && /^-?\d+(\.\d+)?$/.test(id) ? Number(id) : id
+}
+
+export const SELECT_DESCRIPTION =
+  'Field paths to return, e.g. ["title","slug","meta.description"]. Dotted paths reach into group and array fields. ' +
+  'The id is always included. Use this to keep responses small: block layouts and rich text can be very large.'
+
+export function selectParam(extra = '') {
+  return z.array(z.string().min(1)).max(50).optional().describe(SELECT_DESCRIPTION + extra)
+}
+
+/** Turn ["title", "meta.description"] into Payload's select shape `{ title: true, meta: { description: true } }`. */
+export function toSelect(paths: string[] | undefined): Record<string, unknown> | undefined {
+  if (!paths?.length) return undefined
+  const select: Record<string, unknown> = {}
+  for (const path of paths) {
+    const parts = path.split('.').filter(Boolean)
+    let node = select
+    for (const [i, key] of parts.entries()) {
+      if (node[key] === true) break
+      if (i === parts.length - 1) {
+        node[key] = true
+        break
+      }
+      if (typeof node[key] !== 'object') node[key] = {}
+      node = node[key] as Record<string, unknown>
+    }
+  }
+  return select
+}
+
+export function getByPath(doc: unknown, path: string): unknown {
+  let current = doc as Record<string, unknown> | null | undefined
+  for (const segment of path.split('.')) {
+    if (current === null || current === undefined) return undefined
+    current = current[segment] as Record<string, unknown> | null | undefined
+  }
+  return current
+}
+
+/** Flat `{ "meta.description": value }` map of the requested paths that exist on `doc`. */
+export function pickPaths(doc: unknown, paths: string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const path of paths) {
+    const value = getByPath(doc, path)
+    if (value !== undefined) out[path] = value
+  }
+  return out
+}
+
+/**
+ * `populate` option that leaves out the `sizes` object (every resized variant) of linked uploads.
+ * The upload's own `url`, `alt`, `filename` and dimensions stay. Undefined when no upload
+ * collection has image sizes, or when the caller asked for full documents.
+ */
+export function trimmedUploadPopulate(
+  req: PayloadRequest,
+  full?: boolean,
+): Record<string, { sizes: false }> | undefined {
+  if (full) return undefined
+  const collections = (req.payload as unknown as { config?: { collections?: CollectionConfig[] } }).config?.collections ?? []
+  const entries = collections
+    .filter((c) => typeof c.upload === 'object' && (c.upload.imageSizes?.length ?? 0) > 0)
+    .map((c) => [c.slug, { sizes: false as const }])
+  return entries.length ? Object.fromEntries(entries) : undefined
 }
 
 /** True when a `where` filter uses a dotted path, which can reach into linked entries. */

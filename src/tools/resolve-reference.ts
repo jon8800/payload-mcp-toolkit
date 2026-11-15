@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { jsonResponse, stampMcpContext } from './_helpers.js'
+import { jsonResponse, pickPaths, selectParam, stampMcpContext, toSelect } from './_helpers.js'
 
 interface MatchCandidate {
   collection: string
@@ -8,6 +8,7 @@ interface MatchCandidate {
   displayName: string
   matchedField: string
   matchType: 'exact-slug' | 'exact' | 'partial'
+  fields?: Record<string, unknown>
 }
 
 export function createResolveReferenceTool(
@@ -26,11 +27,12 @@ export function createResolveReferenceTool(
         .string()
         .optional()
         .describe('Optional collection slug to restrict search to a single collection'),
+      select: selectParam(' Each candidate then carries a `fields` object with those values. Candidates always include id and displayName.'),
     }),
     handler: async (args: Record<string, unknown>, req: PayloadRequest) => {
       stampMcpContext(req)
 
-      const { query, collection } = args as { query: string; collection?: string }
+      const { query, collection, select } = args as { query: string; collection?: string; select?: string[] }
 
       const collectionsToSearch = collection
         ? new Map(
@@ -56,13 +58,12 @@ export function createResolveReferenceTool(
 
       const settled = await Promise.allSettled(
         targets.map(([slug, fields]) => {
-          const selectFields: Record<string, true> = {}
-          for (const field of fields) selectFields[field] = true
           return req.payload.find({
             collection: slug as any,
             where: { or: fields.map((field) => ({ [field]: { like: query } })) },
             limit: 5,
-            select: selectFields,
+            select: toSelect([...fields, ...(select ?? [])]) as never,
+            depth: 0,
             req,
             overrideAccess: false,
             user: req.user,
@@ -75,7 +76,7 @@ export function createResolveReferenceTool(
         if (outcome.status !== 'fulfilled') return
         const [slug, fields] = targets[i]
         for (const doc of outcome.value.docs) {
-          allCandidates.push(...rankDocument(doc, slug, fields, query))
+          allCandidates.push(...rankDocument(doc, slug, fields, query, select))
         }
       })
 
@@ -112,6 +113,7 @@ function rankDocument(
   collection: string,
   fields: string[],
   query: string,
+  select?: string[],
 ): MatchCandidate[] {
   const queryLower = query.toLowerCase()
   let bestMatch: MatchCandidate | null = null
@@ -141,6 +143,7 @@ function rankDocument(
         displayName: getDisplayName(doc, fields),
         matchedField: field,
         matchType,
+        ...(select?.length ? { fields: pickPaths(doc, select) } : {}),
       }
     }
   }

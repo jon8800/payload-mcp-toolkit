@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { RelationshipEdge } from '../types.js'
-import { errorMessage, jsonResponse, stampMcpContext, textResponse } from './_helpers.js'
+import { errorMessage, jsonResponse, stampMcpContext, textResponse, parseDocumentId } from './_helpers.js'
 
 const SAMPLE_LIMIT = 5
 
@@ -155,7 +155,7 @@ export function createSafeDeleteTool(relationships: RelationshipEdge[]) {
       try {
         await req.payload.delete({
           collection: collection as any,
-          id: documentId,
+          id: parseDocumentId(req, collection, documentId),
           req,
           overrideAccess: false,
           user: req.user,

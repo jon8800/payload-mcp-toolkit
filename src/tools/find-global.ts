@@ -1,13 +1,17 @@
 import { z } from 'zod'
 import type { GlobalConfig, PayloadRequest } from 'payload'
 import type { GlobalSchema } from '../types.js'
-import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers.js'
+import {
+  errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth, selectParam, toSelect,
+  trimmedUploadPopulate } from './_helpers.js'
 
 interface FindGlobalArgs {
   slug: string
   draft?: boolean
   depth?: number
   locale?: string
+  select?: string[]
+  full?: boolean
 }
 
 /**
@@ -36,7 +40,7 @@ export function createFindGlobalTool(
     description:
       'Read a global (a singleton site-wide settings document) by slug. ' +
       'Globals carry things like site name, footer config, navigation menus — there is no `id`, no list, no `where` filter. ' +
-      'Use `draft: true` to read the draft version of a draft-enabled global.\n\n' +
+      'Use `draft: true` to read the draft version of a draft-enabled global. Pass `select` to return only some fields.\n\n' +
       'Available globals:\n' +
       descriptionLines.join('\n'),
     parameters: {
@@ -55,16 +59,23 @@ export function createFindGlobalTool(
         .min(0)
         .max(3)
         .optional()
-        .describe('Relationship population depth. Default 1.'),
+        .describe(
+          'How many levels of linked entries (relationships, uploads) to fill in. 0 returns linked entries as IDs. Default 1.',
+        ),
       locale: z
         .string()
         .optional()
         .describe(
           'Optional locale code (e.g. "en", "fr") for localized fields. Defaults to the request locale.',
         ),
+      select: selectParam(' Without it the whole global comes back.'),
+      full: z
+        .boolean()
+        .optional()
+        .describe('When true, linked uploads keep every image size variant. By default they leave out `sizes`.'),
     },
     handler: async (args: Record<string, unknown>, req: PayloadRequest, _extra: unknown) => {
-      const { slug, draft, depth, locale } = args as unknown as FindGlobalArgs
+      const { slug, draft, depth, locale, select, full } = args as unknown as FindGlobalArgs
 
       if (!globalSchemas.has(slug)) {
         return textResponse(
@@ -76,10 +87,13 @@ export function createFindGlobalTool(
       const globalConfig = globalsBySlug.get(slug)
 
       try {
+        const populate = trimmedUploadPopulate(req, full)
         const doc = await req.payload.findGlobal({
           slug: slug as never,
           depth: populateDepth(req, depth ?? 1),
           draft: draft ?? false,
+          ...(select?.length ? { select: toSelect(select) as never } : {}),
+          ...(populate ? { populate: populate as never } : {}),
           ...(locale ? { locale: locale as never } : {}),
           req,
           overrideAccess: false,

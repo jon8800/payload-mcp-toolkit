@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
 import type { CollectionSchema } from '../types.js'
-import { jsonResponse, stampMcpContext } from './_helpers.js'
+import { getByPath, jsonResponse, pickPaths, selectParam, stampMcpContext, toSelect } from './_helpers.js'
 
 const DEFAULT_LIMIT = 20
 const HARD_LIMIT = 100
@@ -12,6 +12,7 @@ interface SearchHit {
   status?: string
   updatedAt?: string
   missingFields?: string[]
+  fields?: Record<string, unknown>
 }
 
 /**
@@ -74,6 +75,7 @@ export function createSearchContentTool(
         .optional()
         .default(DEFAULT_LIMIT)
         .describe(`Maximum hits per collection (default ${DEFAULT_LIMIT}, max ${HARD_LIMIT}).`),
+      select: selectParam(' Each hit then carries a `fields` object with those values. Hits always include id, displayName, status and updatedAt.'),
     },
     handler: async (
       args: Record<string, unknown>,
@@ -88,6 +90,7 @@ export function createSearchContentTool(
         newerThanDays,
         missingFields,
         limit = DEFAULT_LIMIT,
+        select,
       } = args as {
         collection?: string
         query?: string
@@ -96,6 +99,7 @@ export function createSearchContentTool(
         newerThanDays?: number
         missingFields?: string[]
         limit?: number
+        select?: string[]
       }
 
       stampMcpContext(req)
@@ -144,6 +148,10 @@ export function createSearchContentTool(
             limit: cappedLimit,
             sort: '-updatedAt',
             depth: 0,
+            select: toSelect([
+              ...schema.searchableFields, 'name', 'title', 'slug', '_status', 'updatedAt',
+              ...(missingFields ?? []), ...(select ?? []),
+            ]) as never,
             // Include drafts so status='draft' works and missingFields queries
             // against draft-only collections aren't misleadingly empty.
             draft: schema.hasDrafts,
@@ -163,7 +171,7 @@ export function createSearchContentTool(
         const result = outcome.value
         if (result.totalDocs > 0) {
           stats[slug] = { totalDocs: result.totalDocs, returned: result.docs.length }
-          grouped[slug] = result.docs.map((doc: any) => buildHit(doc, missingFields))
+          grouped[slug] = result.docs.map((doc: any) => buildHit(doc, missingFields, select))
         }
       })
 
@@ -174,7 +182,7 @@ export function createSearchContentTool(
   }
 }
 
-function buildHit(doc: Record<string, any>, missingFields?: string[]): SearchHit {
+function buildHit(doc: Record<string, any>, missingFields?: string[], select?: string[]): SearchHit {
   const hit: SearchHit = {
     id: doc.id,
     displayName: doc.name || doc.title || doc.slug || String(doc.id),
@@ -185,19 +193,9 @@ function buildHit(doc: Record<string, any>, missingFields?: string[]): SearchHit
   if (missingFields?.length) {
     hit.missingFields = missingFields.filter((f) => isFieldEmpty(getByPath(doc, f)))
   }
+  if (select?.length) hit.fields = pickPaths(doc, select)
 
   return hit
-}
-
-function getByPath(doc: Record<string, any>, path: string): unknown {
-  // Walk dotted paths so `meta.description` reads doc.meta?.description rather
-  // than the literal key `"meta.description"`. Matches the `where` keys we emit.
-  let current: any = doc
-  for (const segment of path.split('.')) {
-    if (current === null || current === undefined) return undefined
-    current = current[segment]
-  }
-  return current
 }
 
 function isFieldEmpty(value: unknown): boolean {
@@ -214,6 +212,7 @@ interface FilterArgs {
   olderThanDays?: number
   newerThanDays?: number
   missingFields?: string[]
+  fields?: Record<string, unknown>
 }
 
 function buildWhereClause(schema: CollectionSchema, filters: FilterArgs): Record<string, unknown> {

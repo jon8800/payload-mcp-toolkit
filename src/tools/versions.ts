@@ -4,11 +4,22 @@ import {
   errorMessage,
   getDocDisplayName,
   jsonResponse,
+  parseDocumentId,
   requireDraftCollection,
   stampMcpContext,
-  textResponse, populateDepth } from './_helpers.js'
+  textResponse, populateDepth, pickPaths, selectParam, toSelect } from './_helpers.js'
 
 const DEFAULT_LIST_LIMIT = 10
+
+/** Read only what the version list shows, plus any `select`ed paths, instead of every full snapshot. */
+export function versionSelect(select?: string[]): Record<string, unknown> {
+  return {
+    updatedAt: true,
+    createdAt: true,
+    autosave: true,
+    version: toSelect(['_status', 'name', 'title', 'slug', ...(select ?? [])]),
+  }
+}
 
 /**
  * Lists recent saved versions of a draft document. Returns id, _status,
@@ -35,16 +46,28 @@ export function createListVersionsTool(draftCollections: Set<string>) {
         .optional()
         .default(DEFAULT_LIST_LIMIT)
         .describe(`Maximum number of versions to return (default ${DEFAULT_LIST_LIMIT})`),
+      select: selectParam(
+        ' Paths are inside the saved version, e.g. ["title","meta.description"]. Each version then carries a `fields` object with those values.',
+      ),
+      depth: z
+        .number()
+        .int()
+        .min(0)
+        .max(3)
+        .optional()
+        .describe('How many levels of linked entries inside `select`ed fields to fill in. Default 0 (IDs).'),
     },
     handler: async (
       args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { collection, documentId, limit = DEFAULT_LIST_LIMIT } = args as {
+      const { collection, documentId, limit = DEFAULT_LIST_LIMIT, select, depth } = args as {
         collection: string
         documentId: string
         limit?: number
+        select?: string[]
+        depth?: number
       }
 
       const guard = requireDraftCollection(collection, draftCollections, 'versions')
@@ -54,9 +77,10 @@ export function createListVersionsTool(draftCollections: Set<string>) {
 
       try {
         const result = await req.payload.findVersions({
-          depth: populateDepth(req),
+          depth: populateDepth(req, depth ?? 0),
           collection: collection as any,
-          where: { parent: { equals: documentId } },
+          where: { parent: { equals: parseDocumentId(req, collection, documentId) } },
+          select: versionSelect(select) as never,
           sort: '-updatedAt',
           limit,
           req,
@@ -73,6 +97,7 @@ export function createListVersionsTool(draftCollections: Set<string>) {
             status: snapshot._status ?? 'unknown',
             displayName: getDocDisplayName(snapshot, `${collection}#${documentId}`),
             autosave: v.autosave === true,
+            ...(select?.length ? { fields: pickPaths(snapshot, select) } : {}),
           }
         })
 

@@ -6,7 +6,7 @@ import {
   errorMessage,
   getDocDisplayName,
   jsonResponse,
-  stampMcpContext, populateDepth } from './_helpers.js'
+  stampMcpContext, populateDepth, parseDocumentId } from './_helpers.js'
 import { applyOperation, errorResponse, validateBlockList } from './_layout-helpers.js'
 
 /**
@@ -113,7 +113,7 @@ export function createPatchLayoutTool(
       try {
         existing = await req.payload.findByID({
           collection: collection as any,
-          id: documentId,
+          id: parseDocumentId(req, collection, documentId),
           depth: 0,
           draft: true,
           req,
@@ -133,7 +133,7 @@ export function createPatchLayoutTool(
         const updated = await req.payload.update({
           depth: populateDepth(req),
           collection: collection as any,
-          id: documentId,
+          id: parseDocumentId(req, collection, documentId),
           data: { [layoutField]: finalLayout } as any,
           draft: isDraftCollection,
           req,

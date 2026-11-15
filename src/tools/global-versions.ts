@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { PayloadRequest } from 'payload'
-import { errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth } from './_helpers.js'
+import {
+  errorMessage, jsonResponse, slugEnum, stampMcpContext, textResponse, populateDepth, pickPaths, selectParam,
+} from './_helpers.js'
 
 const DEFAULT_LIST_LIMIT = 10
 
@@ -30,16 +32,28 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
         .string()
         .optional()
         .describe('Optional locale code (e.g. "en", "fr") to filter version snapshots to.'),
+      select: selectParam(
+        ' Paths are inside the saved version, e.g. ["title","meta.description"]. Each version then carries a `fields` object with those values.',
+      ),
+      depth: z
+        .number()
+        .int()
+        .min(0)
+        .max(3)
+        .optional()
+        .describe('How many levels of linked entries inside `select`ed fields to fill in. Default 0 (IDs).'),
     },
     handler: async (
       args: Record<string, unknown>,
       req: PayloadRequest,
       _extra: unknown,
     ) => {
-      const { slug, limit = DEFAULT_LIST_LIMIT, locale } = args as {
+      const { slug, limit = DEFAULT_LIST_LIMIT, locale, select, depth } = args as {
         slug: string
         limit?: number
         locale?: string
+        select?: string[]
+        depth?: number
       }
 
       if (!draftGlobals.has(slug)) {
@@ -52,7 +66,8 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
 
       try {
         const result = await req.payload.findGlobalVersions({
-          depth: populateDepth(req),
+          // No `select` here: Payload's findGlobalVersions drops the version fields when one is passed.
+          depth: populateDepth(req, depth ?? 0),
           slug: slug as never,
           sort: '-updatedAt',
           limit,
@@ -70,6 +85,7 @@ export function createListGlobalVersionsTool(draftGlobals: Set<string>) {
             createdAt: v.createdAt,
             status: snapshot._status ?? 'unknown',
             autosave: v.autosave === true,
+            ...(select?.length ? { fields: pickPaths(snapshot, select) } : {}),
           }
         })
 
