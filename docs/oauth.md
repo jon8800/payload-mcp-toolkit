@@ -57,7 +57,7 @@ async headers() {
 
 The authenticated data endpoints return JSON only with `Accept: application/json` and never cache consent data. Browser navigation redirects into the admin view. Approval and revocation still use the server's signed consent and origin checks.
 
-If your existing policy restricts `form-action`, allow your trusted OAuth callback origins too. Browsers can enforce that directive on the approval redirect back to Claude or ChatGPT.
+If your existing policy restricts `form-action`, allow your trusted OAuth callback origins too, including `http://localhost:*` and `http://127.0.0.1:*` for Claude Code. Browsers can enforce that directive on the approval redirect back to Claude or ChatGPT.
 
 ## Claude and ChatGPT trial
 
@@ -73,7 +73,11 @@ For ChatGPT, open chatgpt.com in a browser and turn on **Developer mode** in Set
 
 Both connectors run through their vendor's cloud. A localhost URL alone is insufficient for this trial. Use a deployed HTTPS test host. The dev app demonstrates the routes and sign-in flow locally.
 
-The default trusted callbacks are `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback` and `https://chatgpt.com/connector_platform_oauth_redirect`. Dynamic registration accepts one exact trusted callback per public client. Client IDs are stable per callback and installation, with no client secret. To support another client, provide its exact callback in `oauth.redirectURIs`. Wildcards and arbitrary client-metadata URL fetching are not supported.
+The default trusted callbacks are `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`, `https://chatgpt.com/connector_platform_oauth_redirect`, `http://localhost/callback` and `http://127.0.0.1/callback`. Dynamic registration accepts one trusted callback per public client. Client IDs are stable per callback and installation, with no client secret. To support another client, provide its callback in `oauth.redirectURIs`. Setting `oauth.redirectURIs` replaces the defaults. Wildcards and arbitrary client-metadata URL fetching are not supported.
+
+HTTPS callbacks must match exactly. An HTTP loopback callback (host `localhost`, `127.0.0.1` or `[::1]`) matches on any port, as RFC 8252 section 7.3 asks. The scheme, host, path and query must still match exactly. This is how Claude Code signs in: it listens on `http://localhost:<random port>/callback` for each sign-in. The authorization code is bound to the exact callback the client sent, port included. To turn Claude Code sign-in off, set `oauth.redirectURIs` to only your HTTPS callbacks.
+
+To connect Claude Code, run `claude mcp add --transport http my-site https://YOUR-SITE/api/mcp`. Then run `/mcp` in Claude Code and pick the server to sign in through the browser.
 
 ## Permissions and lifecycle
 

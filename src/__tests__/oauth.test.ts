@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Config, Payload, PayloadRequest } from 'payload'
 import { describe, expect, it, vi } from 'vitest'
-import { createOAuth, type OAuthOptions } from '../oauth.js'
+import { createOAuth, redirectMatches, type OAuthOptions } from '../oauth.js'
 import type { Catalog } from '../oauth-permissions.js'
 import { consumeRecord, createOAuthCollection, OAUTH_COLLECTION, tokenKey, type OAuthRecord } from '../oauth-store.js'
 
@@ -607,5 +607,94 @@ describe('OAuth consent permissions', () => {
     expect(response.status).toBe(400)
     const retry = await f.call('/authorize', 'POST', new URLSearchParams({ consent: approval, decision: 'allow' }).toString())
     expect(retry.status).toBe(303)
+  })
+})
+
+describe('OAuth loopback callbacks (RFC 8252 section 7.3, Claude Code)', () => {
+  const claudeCode = 'http://localhost:53682/callback'
+
+  async function signIn(f: ReturnType<typeof setup>, uri: string) {
+    const register = await f.call('/register', 'POST', JSON.stringify({ redirect_uris: [uri], token_endpoint_auth_method: 'none' }), null, { 'content-type': 'application/json' })
+    expect(register.status).toBe(201)
+    const registered = await register.json()
+    expect(registered.redirect_uris).toEqual([uri])
+    const approval = await f.consent(registered.client_id, { redirect_uri: uri })
+    const response = await f.call('/authorize', 'POST', new URLSearchParams({ consent: approval, decision: 'allow' }).toString())
+    expect(response.status).toBe(303)
+    const location = new URL(response.headers.get('location')!)
+    expect(location.origin + location.pathname).toBe(uri)
+    return { client: registered.client_id as string, code: location.searchParams.get('code')! }
+  }
+
+  it('accepts Claude Code on a random localhost port by default, and binds the code to that exact port', async () => {
+    const f = setup()
+    const { client, code } = await signIn(f, claudeCode)
+    expect((await f.exchange(client, code, { redirect_uri: 'http://localhost:53683/callback' })).status).toBe(400)
+    const { client: again, code: fresh } = await signIn(f, 'http://localhost:61001/callback')
+    expect(again).toBe(client)
+    const tokens = await f.exchange(again, fresh, { redirect_uri: 'http://localhost:61001/callback' })
+    expect(tokens.status).toBe(200)
+    expect((await tokens.json()).access_token).toBeTruthy()
+  })
+
+  it('accepts 127.0.0.1 by default and [::1] when configured, on any port', async () => {
+    await signIn(setup(), 'http://127.0.0.1:40123/callback')
+    await signIn(setup({ redirectURIs: ['http://[::1]/callback'] }), 'http://[::1]:40123/callback')
+  })
+
+  it.each([
+    'http://localhost:53682/other',
+    'http://localhost:53682/callback/',
+    'http://localhost:53682/callback?x=1',
+    'http://127.0.0.1:53682/oauth/callback',
+  ])('rejects a loopback callback with the wrong path or query: %s', async uri => {
+    const f = setup()
+    const response = await f.call('/register', 'POST', JSON.stringify({ redirect_uris: [uri] }), null, { 'content-type': 'application/json' })
+    expect(response.status).toBe(400)
+    const client = await f.register('http://localhost:1/callback')
+    const authorize = await f.call(`/authorize?${f.authParams(client, { redirect_uri: uri })}`, 'GET', undefined, account, { accept: 'application/json' })
+    expect(authorize.status).toBe(400)
+  })
+
+  it.each([
+    'http://evil.example:53682/callback',
+    'http://localhost.evil.example:53682/callback',
+    'http://192.168.1.5:53682/callback',
+    'https://localhost:53682/callback',
+    'http://user:pass@localhost:53682/callback',
+  ])('rejects a non-loopback or altered HTTP callback: %s', async uri => {
+    const f = setup()
+    const response = await f.call('/register', 'POST', JSON.stringify({ redirect_uris: [uri] }), null, { 'content-type': 'application/json' })
+    expect(response.status).toBe(400)
+  })
+
+  it.each([
+    'https://claude.ai:8443/api/mcp/auth_callback',
+    'https://claude.ai/api/mcp/auth_callback/',
+    'http://claude.ai/api/mcp/auth_callback',
+    'https://claude.ai/api/mcp/auth_callback?x=1',
+  ])('keeps HTTPS callbacks exact: %s', async uri => {
+    const f = setup()
+    const response = await f.call('/register', 'POST', JSON.stringify({ redirect_uris: [uri] }), null, { 'content-type': 'application/json' })
+    expect(response.status).toBe(400)
+    const authorize = await f.call(`/authorize?${f.authParams(await f.register(), { redirect_uri: uri })}`, 'GET', undefined, account, { accept: 'application/json' })
+    expect(authorize.status).toBe(400)
+  })
+
+  it('does not accept loopback callbacks when the site configures only HTTPS callbacks', async () => {
+    const f = setup({ redirectURIs: [callback] })
+    const response = await f.call('/register', 'POST', JSON.stringify({ redirect_uris: [claudeCode] }), null, { 'content-type': 'application/json' })
+    expect(response.status).toBe(400)
+  })
+
+  it('matches only scheme, host, path and query for loopback entries', () => {
+    expect(redirectMatches('http://localhost/callback', 'http://localhost:9/callback')).toBe(true)
+    expect(redirectMatches('http://localhost:3000/callback', 'http://localhost:9/callback')).toBe(true)
+    expect(redirectMatches('http://localhost/callback', 'http://127.0.0.1:9/callback')).toBe(false)
+    expect(redirectMatches('http://localhost/callback', 'http://localhost:9/callback#x')).toBe(false)
+    expect(redirectMatches(callback, `${callback}`)).toBe(true)
+    expect(redirectMatches(callback, 'https://claude.ai:443/api/mcp/auth_callback')).toBe(false)
+    expect(redirectMatches('http://localhost/callback', null)).toBe(false)
+    expect(redirectMatches('http://localhost/callback', 'not a url')).toBe(false)
   })
 })

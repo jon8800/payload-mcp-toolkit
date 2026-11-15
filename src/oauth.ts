@@ -11,15 +11,34 @@ const WRITE = 'mcp:write'
 const ACCESS_SECONDS = 3600
 const GRANT_SECONDS = 30 * 24 * 3600
 // ChatGPT uses this fixed callback only when the server supports RFC 9207 (`iss` in the authorization response).
+// Claude Code listens on `http://localhost:<random port>/callback`; loopback entries match on any port.
 const DEFAULT_REDIRECTS = ['https://claude.ai/api/mcp/auth_callback', 'https://claude.com/api/mcp/auth_callback',
-  'https://chatgpt.com/connector_platform_oauth_redirect']
+  'https://chatgpt.com/connector_platform_oauth_redirect', 'http://localhost/callback', 'http://127.0.0.1/callback']
+const LOOPBACK_HOSTS = ['127.0.0.1', '[::1]', 'localhost']
+
+/**
+ * Exact match, except that an HTTP loopback trusted callback accepts any port (RFC 8252 section 7.3):
+ * native apps such as Claude Code pick a free port for each sign-in. Scheme, host, path and query
+ * must still match exactly. HTTPS callbacks stay exact.
+ */
+export function redirectMatches(trusted: string, candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false
+  if (candidate === trusted) return true
+  let a: URL, b: URL
+  try { a = new URL(trusted); b = new URL(candidate) } catch { return false }
+  return a.protocol === 'http:' && LOOPBACK_HOSTS.includes(a.hostname) && b.protocol === 'http:' && b.hostname === a.hostname &&
+    b.pathname === a.pathname && b.search === a.search && !b.hash && !b.username && !b.password
+}
 
 export interface OAuthOptions {
   /** Required site policy. Rechecked at consent, refresh and every MCP request. */
   canAuthorize: (req: PayloadRequest) => boolean | Promise<boolean>
   /** Defaults to Payload admin login. Return a same-origin login URL that returns to returnTo. */
   loginURL?: (returnTo: string) => string
-  /** Exact trusted callbacks; defaults to the Claude (web/Desktop) and ChatGPT remote connector callbacks. */
+  /**
+   * Trusted callbacks. HTTPS entries match exactly. HTTP loopback entries (localhost, 127.0.0.1, [::1]) match any port.
+   * Defaults to the Claude (web/Desktop), ChatGPT and Claude Code (`http://localhost/callback`) callbacks.
+   */
   redirectURIs?: string[]
   /** Read-only by default. Editor enables create/update, still subject to Payload access controls. */
   access?: 'read-only' | 'editor'
@@ -61,7 +80,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   const metadataURL = `${baseURL}/resource`
   const adminURL = `${issuer}${config.routes?.admin ?? '/admin'}`
   const redirects = options.redirectURIs ?? DEFAULT_REDIRECTS
-  if (!redirects.length || redirects.length > 20) throw new Error('OAuth requires 1–20 exact redirectURIs.')
+  if (!redirects.length || redirects.length > 20) throw new Error('OAuth requires 1–20 redirectURIs.')
   for (const value of redirects) {
     const url = new URL(value)
     if (url.hash || url.username || url.password || url.searchParams.has('code') || url.searchParams.has('state') ||
@@ -73,6 +92,10 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
   // Registration is limited to operator-trusted callbacks. Stable public IDs need no client table.
   function clients(payload: Payload) {
     return redirects.map(uri => ({ uri, id: `mcp_${hashKey(`oauth-client:${issuer}:${uri}`, payload.secret)}` }))
+  }
+  function clientFor(payload: Payload, uri: unknown) {
+    const all = clients(payload)
+    return all.find(c => c.uri === uri) ?? all.find(c => redirectMatches(c.uri, uri))
   }
   function client(req: PayloadRequest, id: string | null) {
     const result = clients(req.payload).find(c => c.id === id)
@@ -162,22 +185,24 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
       (data.token_endpoint_auth_method && data.token_endpoint_auth_method !== 'none') ||
       (data.grant_types && (!Array.isArray(data.grant_types) || data.grant_types.some(t => !['authorization_code', 'refresh_token'].includes(t)))) ||
       (data.response_types && (!Array.isArray(data.response_types) || data.response_types.length !== 1 || data.response_types[0] !== 'code'))) throw new OAuthError('invalid_client_metadata')
-    const registered = clients(req.payload).find(c => c.uri === (data.redirect_uris as unknown[])[0])
+    const requested = (data.redirect_uris as unknown[])[0] as string
+    const registered = clientFor(req.payload, requested)
     if (!registered) throw new OAuthError('invalid_redirect_uri')
-    return json({ client_id: registered.id, client_name: new URL(registered.uri).hostname, redirect_uris: [registered.uri],
+    return json({ client_id: registered.id, client_name: new URL(registered.uri).hostname, redirect_uris: [requested],
       token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] }, 201)
   })
   endpoint('/authorize', 'get', async req => {
     const params = new URL(req.url!).searchParams
     for (const key of params.keys()) if (params.getAll(key).length !== 1) throw new OAuthError('invalid_request')
     const registered = client(req, params.get('client_id'))
-    if (params.get('redirect_uri') !== registered.uri || params.get('response_type') !== 'code' ||
+    const redirectURI = params.get('redirect_uri')
+    if (!redirectMatches(registered.uri, redirectURI) || params.get('response_type') !== 'code' ||
       params.get('resource') !== resource || params.get('code_challenge_method') !== 'S256' ||
       !/^[A-Za-z0-9_-]{43}$/.test(params.get('code_challenge') ?? '') || (params.get('state')?.length ?? 0) > 2048) throw new OAuthError('invalid_request')
     const scope = scopes(params.get('scope')) || READ
     if (!req.user) return login(req)
     if (!await session(req)) throw new OAuthError('access_denied', 403)
-    const consent = signed(req.payload, { user: req.user.id, client: registered.id, redirect: registered.uri,
+    const consent = signed(req.payload, { user: req.user.id, client: registered.id, redirect: redirectURI,
       challenge: params.get('code_challenge'), state: params.get('state'), scope, resource, expires: Date.now() + 600_000, nonce: randomToken() })
     if (!req.headers.get('accept')?.includes('application/json')) return redirect(`${adminURL}/mcp-authorize?${params}`)
     return json({ consent, clientName: new URL(registered.uri).hostname, account: String(req.user.email ?? req.user.id), scope, catalog })
@@ -188,8 +213,8 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     const consent = verified(req.payload, params.get('consent') ?? '')
     csrf(req, consent)
     const registered = client(req, String(consent.client))
-    if (consent.redirect !== registered.uri || consent.resource !== resource) throw new OAuthError('invalid_request')
-    const callback = new URL(registered.uri)
+    if (!redirectMatches(registered.uri, consent.redirect) || consent.resource !== resource) throw new OAuthError('invalid_request')
+    const callback = new URL(String(consent.redirect))
     if (typeof consent.state === 'string') callback.searchParams.set('state', consent.state)
     callback.searchParams.set('iss', issuer)
     if (params.get('decision') === 'deny') { callback.searchParams.set('error', 'access_denied'); return redirect(callback.href) }
@@ -210,7 +235,7 @@ export function createOAuth(options: OAuthOptions, config: Config, userCollectio
     await writeRecord(req.payload, grant)
     const code = randomToken()
     await writeRecord(req.payload, { key: tokenKey(req.payload, code), kind: 'code', expiresAt: expires(300),
-      data: { grant: grant.key, client: registered.id, redirect: registered.uri, challenge: consent.challenge, resource, scope } })
+      data: { grant: grant.key, client: registered.id, redirect: String(consent.redirect), challenge: consent.challenge, resource, scope } })
     callback.searchParams.set('code', code)
     return redirect(callback.href)
   })
